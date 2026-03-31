@@ -1,0 +1,11 @@
+{
+  "owner": "changer-changer",
+  "slug": "paper-research-agent",
+  "displayName": "Paper Research Agent",
+  "latest": {
+    "version": "1.0.0",
+    "publishedAt": 1773798029047,
+    "commit": "https://github.com/openclaw/skills/commit/20b20112fce85686e88bc928d81f88c183032fb5"
+  },
+  "history": []
+}

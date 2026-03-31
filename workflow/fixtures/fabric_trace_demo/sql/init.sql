@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS trace_batch (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    batch_code VARCHAR(64) NOT NULL,
+    owner_role VARCHAR(32) NOT NULL,
+    tx_id VARCHAR(128) NOT NULL
+);

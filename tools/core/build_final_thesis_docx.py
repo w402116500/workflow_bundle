@@ -1,0 +1,1202 @@
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from docx import Document
+from docx.enum.section import WD_ORIENT, WD_SECTION_START
+from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Inches, Mm, Pt, RGBColor
+from PIL import Image, ImageDraw, ImageFont
+
+WORKSPACE_DEFAULT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CONFIG_PATH = None
+
+
+LINE_SPACING_PT = 23
+TITLE_SPACING_HALF_LINE = LINE_SPACING_PT / 2
+BODY_FIRST_LINE_INDENT_PT = 24
+
+
+FIG_RE = re.compile(r"!\[(?P<alt>.*?)\]\((?P<path>.*?)\)")
+HEADING_RE = re.compile(r"^(?P<level>#{1,6})\s+(?P<text>.+?)\s*$")
+TABLE_SEP_RE = re.compile(r"^\|\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|\s*$")
+TABLE_ROW_RE = re.compile(r"^\|.*\|\s*$")
+TABLE_CAPTION_RE = re.compile(r"^表\d+\.\d+\s+.+")
+FIG_CAPTION_RE = re.compile(r"^图\d+\.\d+\s+.+")
+FIG_PLACEHOLDER_RE = re.compile(r"^（配图占位，终稿插入图(?P<figs>.+?)）\s*$")
+FIG_HIDDEN_MARKER_RE = re.compile(r"^<!--\s*figure:\s*(?P<figs>.+?)\s*-->\s*$")
+REF_ENTRY_RE = re.compile(r"^\[(\d+)\]\s*")
+CITE_RE = re.compile(r"\[(\d+)\]")
+TRAILING_URL_RE = re.compile(r"\s+(?:https?|ftp)://\S+\s*$", re.IGNORECASE)
+
+
+DEFAULT_CHAPTER_ORDER = [
+    "01-绪论.md",
+    "02-系统开发工具及技术介绍.md",
+    "03-需求分析.md",
+    "04-系统设计.md",
+    "05-系统实现.md",
+    "06-系统测试.md",
+    "07-结论与展望.md",
+    "08-致谢.md",
+    "REFERENCES.md",
+]
+DEFAULT_KEYWORDS_CN = "FISCO BCOS；区块链；健康档案；访问控制；存证审计"
+DEFAULT_KEYWORDS_EN = "FISCO BCOS; blockchain; health record; access control; notarization and audit"
+
+
+def _resolve_default_config_path(config_path: Path | None = None) -> Path:
+    if config_path:
+        return Path(config_path).resolve()
+
+    if WORKSPACE_DEFAULT_ROOT.name == "workflow_bundle":
+        active_pointer = WORKSPACE_DEFAULT_ROOT / "workflow" / "configs" / "active_workspace.json"
+    else:
+        active_pointer = WORKSPACE_DEFAULT_ROOT / "workflow_bundle" / "workflow" / "configs" / "active_workspace.json"
+
+    if not active_pointer.exists():
+        raise FileNotFoundError(
+            "No active workspace configured. Run `python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace.json>` first."
+        )
+
+    payload = json.loads(active_pointer.read_text(encoding="utf-8"))
+    raw_path = str(payload.get("config_path") or "").strip()
+    if not raw_path:
+        raise FileNotFoundError(f"Active workspace pointer is invalid: {active_pointer}")
+    resolved = Path(raw_path)
+    if not resolved.is_absolute():
+        base_root = WORKSPACE_DEFAULT_ROOT.parent if WORKSPACE_DEFAULT_ROOT.name == "workflow_bundle" else WORKSPACE_DEFAULT_ROOT
+        resolved = (base_root / resolved).resolve()
+    if not resolved.exists():
+        raise FileNotFoundError(f"Active workspace config does not exist: {resolved}")
+    return resolved
+
+
+@dataclass
+class FigureItem:
+    caption: str
+    source_path: Path
+    processed_path: Path
+    inserted_page: int | None = None
+
+
+@dataclass
+class BuildSettings:
+    workspace_root: Path
+    config_path: Path | None
+    input_dir: Path
+    diagram_dir: Path
+    output_dir: Path
+    output_docx: Path
+    processed_img_dir: Path
+    figure_log: Path
+    reference_file: str
+    abstract_cn_file: str
+    abstract_en_file: str
+    chapter_order: list[str]
+    default_keywords_cn: str
+    default_keywords_en: str
+    figure_map: dict[str, tuple[str, Path]]
+
+
+def _resolve_path(base: Path, raw_path: str) -> Path:
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    return (base / path).resolve()
+
+
+def _resolve_optional_path(base: Path, raw_path: str | None, fallback: Path) -> Path:
+    if not raw_path:
+        return fallback
+    return _resolve_path(base, raw_path)
+
+
+def _resolve_output_member(base: Path, raw_path: str | None, fallback_name: str) -> Path:
+    if not raw_path:
+        return base / fallback_name
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+    return base / path
+
+
+def _default_settings(workspace_root: Path | None = None) -> BuildSettings:
+    root = (workspace_root or WORKSPACE_DEFAULT_ROOT).resolve()
+    diagram_dir = root / "docs" / "images"
+    output_dir = root / "word_output"
+    return BuildSettings(
+        workspace_root=root,
+        config_path=None,
+        input_dir=root / "polished_v3",
+        diagram_dir=diagram_dir,
+        output_dir=output_dir,
+        output_docx=output_dir / "论文_润色版_规范排版_含配图_v29.docx",
+        processed_img_dir=output_dir / "processed_images",
+        figure_log=output_dir / "figure_insert_log_v29.csv",
+        reference_file="REFERENCES.md",
+        abstract_cn_file="00-摘要.md",
+        abstract_en_file="00-Abstract.md",
+        chapter_order=list(DEFAULT_CHAPTER_ORDER),
+        default_keywords_cn=DEFAULT_KEYWORDS_CN,
+        default_keywords_en=DEFAULT_KEYWORDS_EN,
+        figure_map={
+            "3.1": ("图3.1 系统用例图", diagram_dir / "image.png"),
+            "4.1": ("图4.1 系统总体架构图", diagram_dir / "image-5.png"),
+            "4.2": ("图4.2 数据库E-R图", diagram_dir / "image-4.png"),
+            "4.3": ("图4.3 上传确认链上存证流程图", diagram_dir / "image-2.png"),
+            "4.4": ("图4.4 授权撤销权限校验流程图", diagram_dir / "image-6.png"),
+            "4.5": ("图4.5 带权限查询与审计追溯流程图", diagram_dir / "image-3.png"),
+            "5.1": ("图5.1 系统功能结构图", diagram_dir / "image-1.png"),
+        },
+    )
+
+
+def _load_settings(config_path: Path | None) -> BuildSettings:
+    if config_path is None or not config_path.exists():
+        return _default_settings()
+
+    raw = json.loads(config_path.read_text(encoding="utf-8"))
+    workspace_root_raw = raw.get("workspace_root")
+    workspace_root = (
+        _resolve_path(config_path.parent, workspace_root_raw)
+        if workspace_root_raw
+        else WORKSPACE_DEFAULT_ROOT.resolve()
+    )
+    defaults = _default_settings(workspace_root)
+    build_cfg = raw.get("build", {})
+    defaults_cfg = raw.get("defaults", {})
+
+    output_dir = _resolve_optional_path(workspace_root, build_cfg.get("output_dir"), defaults.output_dir)
+    raw_figure_map = raw.get("figure_map")
+    settings = BuildSettings(
+        workspace_root=workspace_root,
+        config_path=config_path.resolve(),
+        input_dir=_resolve_optional_path(workspace_root, build_cfg.get("input_dir"), defaults.input_dir),
+        diagram_dir=_resolve_optional_path(workspace_root, build_cfg.get("diagram_dir"), defaults.diagram_dir),
+        output_dir=output_dir,
+        output_docx=_resolve_output_member(output_dir, build_cfg.get("output_docx"), defaults.output_docx.name),
+        processed_img_dir=_resolve_output_member(
+            output_dir,
+            build_cfg.get("processed_image_dir"),
+            defaults.processed_img_dir.name,
+        ),
+        figure_log=_resolve_output_member(output_dir, build_cfg.get("figure_log"), defaults.figure_log.name),
+        reference_file=build_cfg.get("reference_file", defaults.reference_file),
+        abstract_cn_file=build_cfg.get("abstract_cn_file", defaults.abstract_cn_file),
+        abstract_en_file=build_cfg.get("abstract_en_file", defaults.abstract_en_file),
+        chapter_order=list(build_cfg.get("chapter_order") or defaults.chapter_order),
+        default_keywords_cn=defaults_cfg.get("keywords_cn", defaults.default_keywords_cn),
+        default_keywords_en=defaults_cfg.get("keywords_en", defaults.default_keywords_en),
+        # Do not inherit legacy template figures when a workspace config is present.
+        # Configured workspaces should opt in only to the figure assets they actually stage.
+        figure_map={},
+    )
+
+    for fig_num, fig_cfg in (raw_figure_map or {}).items():
+        if not isinstance(fig_cfg, dict):
+            continue
+        caption = fig_cfg.get("caption")
+        path = fig_cfg.get("path")
+        if not caption or not path:
+            continue
+        settings.figure_map[fig_num] = (caption, _resolve_path(workspace_root, path))
+
+    return settings
+
+
+SETTINGS = _default_settings()
+
+
+def _activate_settings(settings: BuildSettings) -> None:
+    global SETTINGS
+    settings.output_dir.mkdir(parents=True, exist_ok=True)
+    settings.processed_img_dir.mkdir(parents=True, exist_ok=True)
+    SETTINGS = settings
+
+
+def _set_style_rfonts(style, east_asia: str, ascii_font: str):
+    rpr = style.element.get_or_add_rPr()
+    rfonts = rpr.find(qn("w:rFonts"))
+    if rfonts is None:
+        rfonts = OxmlElement("w:rFonts")
+        rpr.append(rfonts)
+    for k in ("w:asciiTheme", "w:hAnsiTheme", "w:eastAsiaTheme", "w:cstheme"):
+        try:
+            rfonts.attrib.pop(qn(k), None)
+        except Exception:
+            pass
+    rfonts.set(qn("w:eastAsia"), east_asia)
+    rfonts.set(qn("w:ascii"), ascii_font)
+    rfonts.set(qn("w:hAnsi"), ascii_font)
+    rfonts.set(qn("w:cs"), ascii_font)
+
+
+def _set_run_rfonts(run, east_asia: str, ascii_font: str):
+    rpr = run._element.get_or_add_rPr()
+    rfonts = rpr.find(qn("w:rFonts"))
+    if rfonts is None:
+        rfonts = OxmlElement("w:rFonts")
+        rpr.append(rfonts)
+    for k in ("w:asciiTheme", "w:hAnsiTheme", "w:eastAsiaTheme", "w:cstheme"):
+        try:
+            rfonts.attrib.pop(qn(k), None)
+        except Exception:
+            pass
+    rfonts.set(qn("w:eastAsia"), east_asia)
+    rfonts.set(qn("w:ascii"), ascii_font)
+    rfonts.set(qn("w:hAnsi"), ascii_font)
+    rfonts.set(qn("w:cs"), ascii_font)
+
+
+def _configure_page(doc: Document):
+    section = doc.sections[0]
+    section.page_width = Mm(210)
+    section.page_height = Mm(297)
+    section.orientation = WD_ORIENT.PORTRAIT
+    section.top_margin = Mm(25)
+    section.bottom_margin = Mm(20)
+    section.left_margin = Mm(25)
+    section.right_margin = Mm(20)
+
+
+def _configure_styles(doc: Document):
+    normal = doc.styles["Normal"]
+    normal.font.size = Pt(12)
+    normal.font.bold = False
+    normal.font.color.rgb = RGBColor(0, 0, 0)
+    _set_style_rfonts(normal, east_asia="SimSun", ascii_font="Times New Roman")
+    ppf = normal.paragraph_format
+    ppf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    ppf.line_spacing = Pt(LINE_SPACING_PT)
+    ppf.space_before = Pt(0)
+    ppf.space_after = Pt(0)
+
+    def add_heading_style(name: str, size_pt: float, align: WD_ALIGN_PARAGRAPH):
+        if name in doc.styles:
+            st = doc.styles[name]
+        else:
+            st = doc.styles.add_style(name, 1)
+        st.font.size = Pt(size_pt)
+        st.font.bold = False
+        st.font.color.rgb = RGBColor(0, 0, 0)
+        _set_style_rfonts(st, east_asia="SimHei", ascii_font="Times New Roman")
+        pf = st.paragraph_format
+        pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        pf.line_spacing = Pt(LINE_SPACING_PT)
+        pf.space_before = Pt(TITLE_SPACING_HALF_LINE)
+        pf.space_after = Pt(TITLE_SPACING_HALF_LINE)
+        pf.alignment = align
+        return st
+
+    add_heading_style("Heading 1", 18, WD_ALIGN_PARAGRAPH.LEFT)
+    add_heading_style("Heading 2", 15, WD_ALIGN_PARAGRAPH.LEFT)
+    add_heading_style("Heading 3", 14, WD_ALIGN_PARAGRAPH.LEFT)
+    add_heading_style("Heading 4", 12, WD_ALIGN_PARAGRAPH.LEFT)
+
+    def _configure_toc_style(name: str, east_asia: str, size_pt: float):
+        try:
+            st = doc.styles[name]
+        except Exception:
+            return
+        st.font.size = Pt(size_pt)
+        st.font.bold = False
+        st.font.color.rgb = RGBColor(0, 0, 0)
+        _set_style_rfonts(st, east_asia=east_asia, ascii_font="Times New Roman")
+        pf = st.paragraph_format
+        pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        pf.line_spacing = Pt(LINE_SPACING_PT)
+        pf.space_before = Pt(0)
+        pf.space_after = Pt(0)
+
+    _configure_toc_style("TOC 1", east_asia="SimHei", size_pt=14)
+    _configure_toc_style("TOC 2", east_asia="SimSun", size_pt=12)
+    _configure_toc_style("TOC 3", east_asia="SimSun", size_pt=12)
+
+    cap = doc.styles.add_style("FigureCaption", 1) if "FigureCaption" not in doc.styles else doc.styles["FigureCaption"]
+    cap.font.size = Pt(12)
+    cap.font.bold = True
+    cap.font.color.rgb = RGBColor(0, 0, 0)
+    _set_style_rfonts(cap, east_asia="SimHei", ascii_font="Times New Roman")
+    cap_pf = cap.paragraph_format
+    cap_pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    cap_pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    cap_pf.line_spacing = Pt(LINE_SPACING_PT)
+    cap_pf.space_before = Pt(0)
+    cap_pf.space_after = Pt(0)
+
+    tcap = doc.styles.add_style("TableCaption", 1) if "TableCaption" not in doc.styles else doc.styles["TableCaption"]
+    tcap.font.size = Pt(12)
+    tcap.font.bold = True
+    tcap.font.color.rgb = RGBColor(0, 0, 0)
+    _set_style_rfonts(tcap, east_asia="SimHei", ascii_font="Times New Roman")
+    tcap_pf = tcap.paragraph_format
+    tcap_pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    tcap_pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    tcap_pf.line_spacing = Pt(LINE_SPACING_PT)
+    tcap_pf.space_before = Pt(0)
+    tcap_pf.space_after = Pt(0)
+
+
+def _add_toc(doc: Document):
+    p = doc.add_paragraph("（请在 Word 中插入“目录”，并更新域以生成目录。）")
+    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+
+
+def _apply_body_paragraph_format(paragraph, indent: bool = True):
+    pf = paragraph.paragraph_format
+    pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    pf.line_spacing = Pt(LINE_SPACING_PT)
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    pf.first_line_indent = Pt(BODY_FIRST_LINE_INDENT_PT) if indent else Pt(0)
+
+
+def _fix_zoom_percent(doc: Document):
+    settings = doc.settings.element
+    zoom = settings.find(qn("w:zoom"))
+    if zoom is None:
+        zoom = OxmlElement("w:zoom")
+        zoom.set(qn("w:val"), "bestFit")
+        settings.insert(0, zoom)
+    if zoom.get(qn("w:percent")) is None:
+        zoom.set(qn("w:percent"), "100")
+
+
+def _add_page_break(doc: Document):
+    doc.add_page_break()
+
+
+def _add_section_break(doc: Document):
+    doc.add_section(WD_SECTION_START.NEW_PAGE)
+
+
+def _render_code_image(code_lines: list[str], output_path: Path, font_size: int = 14) -> Path:
+    font_candidates = [
+        Path("C:/Windows/Fonts/msyh.ttc"),
+        Path("C:/Windows/Fonts/msyhbd.ttc"),
+        Path("C:/Windows/Fonts/Deng.ttf"),
+        Path("C:/Windows/Fonts/simsun.ttc"),
+        Path("C:/Windows/Fonts/simsunb.ttf"),
+        Path("C:/Windows/Fonts/consola.ttf"),
+        Path("C:/Windows/Fonts/consolab.ttf"),
+        Path("C:/Windows/Fonts/Consolas.ttf"),
+        Path("C:/Windows/Fonts/Arial.ttf"),
+    ]
+    font = None
+    for fp in font_candidates:
+        if fp.exists():
+            font = ImageFont.truetype(str(fp), font_size)
+            break
+    if font is None:
+        font = ImageFont.load_default()
+
+    # Normalize empty lines to keep consistent height
+    safe_lines = [ln if ln.strip() != "" else " " for ln in code_lines]
+
+    dummy = Image.new("RGB", (10, 10), "white")
+    draw = ImageDraw.Draw(dummy)
+    line_heights = []
+    max_width = 0
+    for ln in safe_lines:
+        bbox = draw.textbbox((0, 0), ln, font=font)
+        width = bbox[2] - bbox[0]
+        height = bbox[3] - bbox[1]
+        max_width = max(max_width, width)
+        line_heights.append(height)
+
+    line_height = max(line_heights) if line_heights else font_size
+    leading = max(4, int(line_height * 0.25))
+    padding_x = 18
+    padding_y = 14
+    img_w = max_width + padding_x * 2
+    img_h = (line_height + leading) * len(safe_lines) - leading + padding_y * 2
+    img = Image.new("RGB", (img_w, img_h), "white")
+    draw = ImageDraw.Draw(img)
+
+    y = padding_y
+    for ln in safe_lines:
+        draw.text((padding_x, y), ln, fill=(0, 0, 0), font=font)
+        y += line_height + leading
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(output_path, format="PNG")
+    return output_path
+
+
+def _add_title(doc: Document, text: str, font: str, bold: bool, style: str | None = None):
+    p = doc.add_paragraph(style=style) if style else doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    p.paragraph_format.space_before = Pt(TITLE_SPACING_HALF_LINE)
+    p.paragraph_format.space_after = Pt(TITLE_SPACING_HALF_LINE)
+    r = p.add_run(text)
+    r.font.size = Pt(18)
+    r.font.bold = bold
+    r.font.name = "Times New Roman"
+    _set_run_rfonts(r, east_asia=font, ascii_font="Times New Roman")
+    return p
+
+
+def _add_keywords_cn(doc: Document, keywords: str):
+    p = doc.add_paragraph()
+    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    r1 = p.add_run("关键词：")
+    r1.font.size = Pt(14)
+    r1.font.bold = False
+    _set_run_rfonts(r1, east_asia="SimHei", ascii_font="Times New Roman")
+    r2 = p.add_run(keywords)
+    r2.font.size = Pt(12)
+    r2.font.bold = False
+    _set_run_rfonts(r2, east_asia="SimSun", ascii_font="Times New Roman")
+
+
+def _add_keywords_en(doc: Document, keywords: str):
+    p = doc.add_paragraph()
+    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    r1 = p.add_run("Key words: ")
+    r1.font.size = Pt(14)
+    r1.font.bold = True
+    r1.font.name = "Times New Roman"
+    r2 = p.add_run(keywords)
+    r2.font.size = Pt(12)
+    r2.font.bold = False
+    r2.font.name = "Times New Roman"
+
+
+def _sanitize_heading(text: str) -> str:
+    return text.replace("（初稿）", "").replace("(初稿)", "").strip()
+
+
+def _is_center_title(text: str) -> bool:
+    normalized = re.sub(r"\s+", "", text)
+    return normalized in {"结论", "致谢", "参考文献", "附录"}
+
+def _format_cite_no(num: str) -> str:
+    return f"[{num}]"
+
+
+def _add_reference_paragraph(doc: Document, text: str, bookmark_state: dict):
+    m = REF_ENTRY_RE.match(text.strip())
+    ref_no = m.group(1) if m else None
+    p = doc.add_paragraph()
+    _apply_body_paragraph_format(p, indent=False)
+    if ref_no:
+        rest = _strip_reference_url(text.strip()[m.end():].lstrip())
+        r_no = p.add_run(_format_cite_no(ref_no))
+        r_no.font.size = Pt(10.5)
+        r_no.font.bold = False
+        _set_run_rfonts(r_no, east_asia="SimSun", ascii_font="Times New Roman")
+        _add_bookmark_on_run(r_no, f"ref_{ref_no}", bookmark_state)
+
+        if rest:
+            r_rest = p.add_run(" " + rest)
+            r_rest.font.size = Pt(10.5)
+            r_rest.font.bold = False
+            _set_run_rfonts(r_rest, east_asia="SimSun", ascii_font="Times New Roman")
+    else:
+        r = p.add_run(_strip_reference_url(text.strip()))
+        r.font.size = Pt(10.5)
+        r.font.bold = False
+        _set_run_rfonts(r, east_asia="SimSun", ascii_font="Times New Roman")
+
+
+def _strip_reference_url(text: str) -> str:
+    cleaned = TRAILING_URL_RE.sub("", text).rstrip()
+    return cleaned
+
+def _add_bookmark(paragraph, name: str, bookmark_state: dict | None = None):
+    state = bookmark_state if bookmark_state is not None else getattr(_add_bookmark, "_state", None)
+    if state is None:
+        state = {"next_id": 1}
+        setattr(_add_bookmark, "_state", state)
+    bid = state["next_id"]
+    state["next_id"] = bid + 1
+
+    start = OxmlElement("w:bookmarkStart")
+    start.set(qn("w:id"), str(bid))
+    start.set(qn("w:name"), name)
+    end = OxmlElement("w:bookmarkEnd")
+    end.set(qn("w:id"), str(bid))
+
+    p = paragraph._p
+    ppr = p.find(qn("w:pPr"))
+    insert_at = 1 if ppr is not None else 0
+    p.insert(insert_at, start)
+    p.append(end)
+
+def _add_bookmark_on_run(run, name: str, bookmark_state: dict):
+    bid = bookmark_state["next_id"]
+    bookmark_state["next_id"] = bid + 1
+
+    start = OxmlElement("w:bookmarkStart")
+    start.set(qn("w:id"), str(bid))
+    start.set(qn("w:name"), name)
+    end = OxmlElement("w:bookmarkEnd")
+    end.set(qn("w:id"), str(bid))
+
+    r = run._r
+    p = r.getparent()
+    idx = p.index(r)
+    p.insert(idx, start)
+    p.insert(idx + 2, end)
+
+
+def _make_superscript_rpr(font_size_half_pt: str = "21"):
+    rpr = OxmlElement("w:rPr")
+
+    rfonts = OxmlElement("w:rFonts")
+    rfonts.set(qn("w:eastAsia"), "SimSun")
+    rfonts.set(qn("w:ascii"), "Times New Roman")
+    rfonts.set(qn("w:hAnsi"), "Times New Roman")
+    rfonts.set(qn("w:cs"), "Times New Roman")
+    rpr.append(rfonts)
+
+    v = OxmlElement("w:vertAlign")
+    v.set(qn("w:val"), "superscript")
+    rpr.append(v)
+
+    u = OxmlElement("w:u")
+    u.set(qn("w:val"), "none")
+    rpr.append(u)
+
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "000000")
+    rpr.append(color)
+
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), font_size_half_pt)
+    rpr.append(sz)
+    sz_cs = OxmlElement("w:szCs")
+    sz_cs.set(qn("w:val"), font_size_half_pt)
+    rpr.append(sz_cs)
+
+    return rpr
+
+
+def _add_ref_field(paragraph, bookmark_name: str, display_text: str):
+    p = paragraph._p
+
+    r1 = OxmlElement("w:r")
+    r1.append(_make_superscript_rpr())
+    fc_begin = OxmlElement("w:fldChar")
+    fc_begin.set(qn("w:fldCharType"), "begin")
+    r1.append(fc_begin)
+    p.append(r1)
+
+    r2 = OxmlElement("w:r")
+    r2.append(_make_superscript_rpr())
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = f" REF {bookmark_name} \\h "
+    r2.append(instr)
+    p.append(r2)
+
+    r3 = OxmlElement("w:r")
+    r3.append(_make_superscript_rpr())
+    fc_sep = OxmlElement("w:fldChar")
+    fc_sep.set(qn("w:fldCharType"), "separate")
+    r3.append(fc_sep)
+    p.append(r3)
+
+    r4 = OxmlElement("w:r")
+    r4.append(_make_superscript_rpr())
+    t = OxmlElement("w:t")
+    t.text = display_text
+    r4.append(t)
+    p.append(r4)
+
+    r5 = OxmlElement("w:r")
+    r5.append(_make_superscript_rpr())
+    fc_end = OxmlElement("w:fldChar")
+    fc_end.set(qn("w:fldCharType"), "end")
+    r5.append(fc_end)
+    p.append(r5)
+
+def _add_superscript_text(paragraph, text: str):
+    run = paragraph.add_run(text)
+    run.font.superscript = True
+    run.font.size = Pt(10.5)
+    run.font.size = Pt(10.5)
+    run.font.color.rgb = RGBColor(0, 0, 0)
+    _set_run_rfonts(run, east_asia="SimSun", ascii_font="Times New Roman")
+
+
+def _add_text_with_cite_links(paragraph, text: str, ref_nums: set[str]):
+    # Inline markdown markers are not part of the required thesis format.
+    # Strip them here as a safety net (Markdown sources are also cleaned).
+    s = text.strip().replace("`", "").replace("**", "")
+    if not s:
+        return
+    pos = 0
+    for m in CITE_RE.finditer(s):
+        start, end = m.span()
+        if start > pos:
+            r = paragraph.add_run(s[pos:start])
+            _set_run_rfonts(r, east_asia="SimSun", ascii_font="Times New Roman")
+        num = m.group(1)
+        cite_text = _format_cite_no(num)
+        if num in ref_nums:
+            _add_ref_field(paragraph, f"ref_{num}", cite_text)
+        else:
+            _add_superscript_text(paragraph, cite_text)
+        pos = end
+    if pos < len(s):
+        r = paragraph.add_run(s[pos:])
+        _set_run_rfonts(r, east_asia="SimSun", ascii_font="Times New Roman")
+
+
+def _set_cell_shading(cell, fill: str):
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = tc_pr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tc_pr.append(shd)
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), fill)
+
+def _set_table_borders_half_pt(table, color: str = "000000"):
+    tbl = table._tbl
+    tbl_pr = tbl.tblPr
+    borders = tbl_pr.find(qn("w:tblBorders"))
+    if borders is None:
+        borders = OxmlElement("w:tblBorders")
+        tbl_pr.append(borders)
+
+    def _set_edge(name: str):
+        el = borders.find(qn(f"w:{name}"))
+        if el is None:
+            el = OxmlElement(f"w:{name}")
+            borders.append(el)
+        el.set(qn("w:val"), "single")
+        el.set(qn("w:sz"), "4")
+        el.set(qn("w:space"), "0")
+        el.set(qn("w:color"), color)
+
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        _set_edge(edge)
+
+
+def _set_border(el, val: str, size: str = "0", color: str = "000000"):
+    el.set(qn("w:val"), val)
+    if val == "nil":
+        for attr in ("w:sz", "w:space", "w:color"):
+            try:
+                el.attrib.pop(qn(attr), None)
+            except Exception:
+                pass
+        return
+    el.set(qn("w:sz"), size)
+    el.set(qn("w:space"), "0")
+    el.set(qn("w:color"), color)
+
+
+def _set_cell_border(cell, edge: str, val: str, size: str = "0", color: str = "000000"):
+    tc_pr = cell._tc.get_or_add_tcPr()
+    tc_borders = tc_pr.find(qn("w:tcBorders"))
+    if tc_borders is None:
+        tc_borders = OxmlElement("w:tcBorders")
+        tc_pr.append(tc_borders)
+    border = tc_borders.find(qn(f"w:{edge}"))
+    if border is None:
+        border = OxmlElement(f"w:{edge}")
+        tc_borders.append(border)
+    _set_border(border, val=val, size=size, color=color)
+
+
+def _apply_three_line_table(table, color: str = "000000"):
+    tbl = table._tbl
+    tbl_pr = tbl.tblPr
+    borders = tbl_pr.find(qn("w:tblBorders"))
+    if borders is None:
+        borders = OxmlElement("w:tblBorders")
+        tbl_pr.append(borders)
+
+    edge_defs = {
+        "top": ("single", "8"),
+        "bottom": ("single", "8"),
+        "left": ("nil", "0"),
+        "right": ("nil", "0"),
+        "insideH": ("nil", "0"),
+        "insideV": ("nil", "0"),
+    }
+    for edge, (val, size) in edge_defs.items():
+        el = borders.find(qn(f"w:{edge}"))
+        if el is None:
+            el = OxmlElement(f"w:{edge}")
+            borders.append(el)
+        _set_border(el, val=val, size=size, color=color)
+
+    if table.rows:
+        for cell in table.rows[0].cells:
+            _set_cell_border(cell, "bottom", val="single", size="8", color=color)
+            for edge in ("left", "right"):
+                _set_cell_border(cell, edge, val="nil", color=color)
+
+    for row in table.rows[1:]:
+        for cell in row.cells:
+            for edge in ("left", "right"):
+                _set_cell_border(cell, edge, val="nil", color=color)
+
+
+def _process_image(src: Path) -> Path:
+    if not src.exists():
+        raise FileNotFoundError(str(src))
+    dst = SETTINGS.processed_img_dir / src.name
+    if src.resolve() == dst.resolve():
+        return dst
+    with Image.open(src) as im:
+        im = im.convert("RGB")
+        im.save(dst, format="PNG", optimize=True)
+    return dst
+
+
+def _resolve_markdown_image_source(md_path: Path, rel_path: str) -> Path:
+    candidate = (md_path.parent / rel_path).resolve()
+    if candidate.exists():
+        return candidate
+
+    basename = Path(rel_path).name
+    search_roots = [
+        SETTINGS.diagram_dir,
+        SETTINGS.workspace_root / "images",
+        SETTINGS.workspace_root / "docs",
+        SETTINGS.output_dir / "processed_images",
+        SETTINGS.processed_img_dir,
+    ]
+
+    for root in search_roots:
+        direct = root / basename
+        if direct.exists():
+            return direct
+
+    for root in search_roots:
+        if not root.exists():
+            continue
+        matches = list(root.rglob(basename))
+        if matches:
+            return matches[0]
+
+    raise FileNotFoundError(str(candidate))
+
+
+def _normalize_markdown_image_line(line: str) -> str:
+    normalized = (
+        line.replace(r"\[", "[")
+        .replace(r"\]", "]")
+        .replace(r"\(", "(")
+        .replace(r"\)", ")")
+    )
+    normalized = re.sub(r"\s+null\)$", ")", normalized)
+    return normalized
+
+
+def _add_image_with_caption(doc: Document, fig: FigureItem):
+    section = doc.sections[0]
+    avail_width_mm = float((section.page_width - section.left_margin - section.right_margin) / Mm(1))
+    avail_height_mm = float((section.page_height - section.top_margin - section.bottom_margin) / Mm(1))
+
+    max_width_mm = min(150.0, avail_width_mm)
+    max_height_mm = min(150.0, max(80.0, avail_height_mm - 40.0))
+
+    with Image.open(fig.processed_path) as im:
+        w_px, h_px = im.size
+    aspect = w_px / max(1, h_px)
+    width_mm = min(max_width_mm, max_height_mm * aspect)
+    height_mm = width_mm / max(1e-6, aspect)
+    if height_mm > max_height_mm:
+        height_mm = max_height_mm
+        width_mm = height_mm * aspect
+
+    p_img = doc.add_paragraph()
+    p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_img.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+    p_img.paragraph_format.line_spacing = 1.0
+    p_img.paragraph_format.keep_together = True
+    p_img.paragraph_format.keep_with_next = True
+    p_img.paragraph_format.space_before = Pt(12)
+    p_img.paragraph_format.space_after = Pt(12)
+    run = p_img.add_run()
+    run.add_picture(str(fig.processed_path), width=Mm(width_mm), height=Mm(height_mm))
+
+    p_cap = doc.add_paragraph(fig.caption, style="FigureCaption")
+    p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_cap.paragraph_format.keep_together = True
+    p_cap.paragraph_format.space_before = Pt(0)
+    p_cap.paragraph_format.space_after = Pt(0)
+
+
+def _add_table(doc: Document, caption: str | None, headers: list[str], rows: list[list[str]]):
+    if caption:
+        doc.add_paragraph((caption or "").replace("`", "").replace("**", ""), style="TableCaption")
+
+    table = doc.add_table(rows=1, cols=len(headers))
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.style = "Table Grid"
+
+    hdr_cells = table.rows[0].cells
+    for i, h in enumerate(headers):
+        hdr_cells[i].text = (h or "").replace("`", "").replace("**", "")
+
+    for r in rows:
+        row_cells = table.add_row().cells
+        for i, v in enumerate(r):
+            row_cells[i].text = (v or "").replace("`", "").replace("**", "")
+
+    for row in table.rows:
+        for cell in row.cells:
+            cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+            for p in cell.paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+                for run in p.runs:
+                    run.font.size = Pt(10.5)
+                    run.font.bold = False
+                    _set_run_rfonts(run, east_asia="SimSun", ascii_font="Times New Roman")
+    _apply_three_line_table(table)
+
+
+def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], page_state: dict, ref_nums: set[str], bookmark_state: dict):
+    lines = md_path.read_text(encoding="utf-8").splitlines()
+    i = 0
+    pending_table_caption: str | None = None
+    pending_fig_caption: str | None = None
+    code_block_index = 0
+
+    def add_paragraph(text: str):
+        text = text.strip()
+        if not text:
+            return
+        if md_path.name == "REFERENCES.md" and REF_ENTRY_RE.match(text):
+            _add_reference_paragraph(doc, text, bookmark_state)
+            return
+        p = doc.add_paragraph()
+        _apply_body_paragraph_format(p, indent=True)
+        _add_text_with_cite_links(p, text, ref_nums)
+
+    while i < len(lines):
+        line = lines[i].rstrip()
+
+        if md_path.name == "REFERENCES.md" and REF_ENTRY_RE.match(line.strip()):
+            _add_reference_paragraph(doc, line.strip(), bookmark_state)
+            i += 1
+            continue
+
+        if line.lstrip().startswith(("- ", "* ")):
+            while i < len(lines) and lines[i].lstrip().startswith(("- ", "* ")):
+                item = lines[i].lstrip()[2:].strip()
+                if item:
+                    p = doc.add_paragraph(style="List Bullet")
+                    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+                    _add_text_with_cite_links(p, item, ref_nums)
+                i += 1
+            continue
+
+        m_num = re.match(r"^\s*(\d+)\.\s+(.+)$", line)
+        if m_num:
+            while i < len(lines):
+                m2 = re.match(r"^\s*(\d+)\.\s+(.+)$", lines[i].rstrip())
+                if not m2:
+                    break
+                item = m2.group(2).strip()
+                if item:
+                    p = doc.add_paragraph(style="List Number")
+                    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+                    _add_text_with_cite_links(p, item, ref_nums)
+                i += 1
+            continue
+
+        if line.strip().startswith("```"):
+            i += 1
+            code_lines = []
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                code_lines.append(lines[i].rstrip("\n"))
+                i += 1
+            if i < len(lines) and lines[i].strip().startswith("```"):
+                i += 1
+
+            if code_lines:
+                code_block_index += 1
+                img_name = f"codeblock_{md_path.stem}_{code_block_index}.png"
+                img_path = SETTINGS.processed_img_dir / img_name
+                _render_code_image(code_lines, img_path)
+                p = doc.add_paragraph()
+                _apply_body_paragraph_format(p, indent=False)
+                run = p.add_run()
+                run.add_picture(str(img_path), width=Inches(6.0))
+            continue
+
+        m_h = HEADING_RE.match(line)
+        if m_h:
+            level = len(m_h.group("level"))
+            text = _sanitize_heading(m_h.group("text")).replace("`", "").replace("**", "")
+            if md_path.name == "REFERENCES.md" and level >= 2:
+                i += 1
+                continue
+            if level == 1:
+                p = doc.add_paragraph(style="Heading 1")
+                r = p.add_run(text)
+                _set_run_rfonts(r, east_asia="SimHei", ascii_font="Times New Roman")
+                if _is_center_title(text):
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif level == 2:
+                p = doc.add_paragraph(style="Heading 2")
+                r = p.add_run(text)
+                _set_run_rfonts(r, east_asia="SimHei", ascii_font="Times New Roman")
+            elif level == 3:
+                p = doc.add_paragraph(style="Heading 3")
+                r = p.add_run(text)
+                _set_run_rfonts(r, east_asia="SimHei", ascii_font="Times New Roman")
+            elif level == 4:
+                p = doc.add_paragraph(style="Heading 4")
+                r = p.add_run(text)
+                _set_run_rfonts(r, east_asia="SimHei", ascii_font="Times New Roman")
+            else:
+                add_paragraph(text)
+            i += 1
+            continue
+
+        if TABLE_CAPTION_RE.match(line.strip()):
+            pending_table_caption = line.strip()
+            i += 1
+            continue
+
+        if FIG_CAPTION_RE.match(line.strip()):
+            s = line.strip()
+            if "。" not in s and len(s) <= 40:
+                pending_fig_caption = s
+                i += 1
+                continue
+
+        m_fig_marker = FIG_HIDDEN_MARKER_RE.match(line.strip()) or FIG_PLACEHOLDER_RE.match(line.strip())
+        if m_fig_marker:
+            figs_raw = m_fig_marker.group("figs")
+            fig_nums = re.findall(r"\d+\.\d+", figs_raw)
+            inserted_any = False
+            missing = []
+            for fig_num in fig_nums:
+                if fig_num in SETTINGS.figure_map:
+                    cap_text, src = SETTINGS.figure_map[fig_num]
+                    if pending_fig_caption and fig_num in pending_fig_caption:
+                        cap_text = pending_fig_caption
+                    processed = _process_image(src)
+                    fig = FigureItem(caption=cap_text, source_path=src, processed_path=processed)
+                    _add_image_with_caption(doc, fig)
+                    figures.append(fig)
+                    inserted_any = True
+                else:
+                    missing.append(fig_num)
+            pending_fig_caption = None
+            if not inserted_any:
+                add_paragraph(line.strip())
+            elif missing:
+                remain = "、".join([f"图{n}" for n in missing])
+                add_paragraph(f"（配图占位，终稿插入{remain}）")
+            i += 1
+            continue
+
+        normalized_line = _normalize_markdown_image_line(line)
+        m_fig = FIG_RE.search(normalized_line)
+        if m_fig:
+            alt = m_fig.group("alt").strip()
+            rel = m_fig.group("path").strip()
+            src = _resolve_markdown_image_source(md_path, rel)
+            processed = _process_image(src)
+            cap = alt if FIG_CAPTION_RE.match(alt) else alt
+            fig = FigureItem(caption=cap, source_path=src, processed_path=processed)
+            _add_image_with_caption(doc, fig)
+            figures.append(fig)
+            i += 1
+            continue
+
+        if TABLE_ROW_RE.match(line) and i + 1 < len(lines) and TABLE_SEP_RE.match(lines[i + 1].rstrip()):
+            header_cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            i += 2
+            body_rows: list[list[str]] = []
+            while i < len(lines) and TABLE_ROW_RE.match(lines[i].rstrip()):
+                row_cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                if len(row_cells) < len(header_cells):
+                    row_cells += [""] * (len(header_cells) - len(row_cells))
+                body_rows.append(row_cells[: len(header_cells)])
+                i += 1
+            _add_table(doc, pending_table_caption, header_cells, body_rows)
+            pending_table_caption = None
+            continue
+
+        if not line.strip():
+            i += 1
+            continue
+
+        para_lines = [line]
+        i += 1
+        while i < len(lines):
+            nxt = lines[i].rstrip()
+            if not nxt.strip():
+                break
+            if nxt.strip().startswith("```"):
+                break
+            normalized_nxt = _normalize_markdown_image_line(nxt)
+            if HEADING_RE.match(nxt) or TABLE_CAPTION_RE.match(nxt.strip()) or FIG_RE.search(normalized_nxt):
+                break
+            if TABLE_ROW_RE.match(nxt) and i + 1 < len(lines) and TABLE_SEP_RE.match(lines[i + 1].rstrip()):
+                break
+            para_lines.append(nxt)
+            i += 1
+
+        add_paragraph(" ".join([p.strip() for p in para_lines]))
+
+
+def _read_abstract_file(path: Path) -> tuple[str, str] | None:
+    if not path.exists():
+        return None
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return None
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    keywords = ""
+    body_lines: list[str] = []
+    for l in lines:
+        if HEADING_RE.match(l):
+            continue
+        if l.lower().startswith("key words:") or l.startswith("关键词："):
+            if "：" in l:
+                keywords = l.split("：", 1)[-1].strip()
+            elif ":" in l:
+                keywords = l.split(":", 1)[-1].strip()
+            else:
+                keywords = l.strip()
+        else:
+            body_lines.append(l)
+    body = " ".join(body_lines).strip()
+    return body, keywords
+
+
+def build():
+    doc = Document()
+    _configure_page(doc)
+    _configure_styles(doc)
+    _fix_zoom_percent(doc)
+
+    page_state = {"page": 1}
+    bookmark_state = {"next_id": 1}
+
+    ref_nums: set[str] = set()
+    ref_path = SETTINGS.input_dir / SETTINGS.reference_file
+    if ref_path.exists():
+        for ln in ref_path.read_text(encoding="utf-8").splitlines():
+            m = REF_ENTRY_RE.match((ln or "").strip())
+            if m:
+                ref_nums.add(m.group(1))
+
+    _add_title(doc, "摘  要", font="SimHei", bold=False, style="Heading 1")
+    cn = _read_abstract_file(SETTINGS.input_dir / SETTINGS.abstract_cn_file)
+    cn_body = cn[0] if cn else "（请在此处填写中文摘要正文，行间距固定23磅。）"
+    cn_kw = cn[1] if cn and cn[1] else SETTINGS.default_keywords_cn
+    p = doc.add_paragraph(cn_body)
+    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    _add_keywords_cn(doc, cn_kw)
+    _add_page_break(doc)
+    page_state["page"] += 1
+
+    _add_title(doc, "Abstract", font="Times New Roman", bold=True, style="Heading 1")
+    en = _read_abstract_file(SETTINGS.input_dir / SETTINGS.abstract_en_file)
+    en_body = en[0] if en else "(Fill in the English abstract here.)"
+    en_kw = en[1] if en and en[1] else SETTINGS.default_keywords_en
+    p = doc.add_paragraph(en_body)
+    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    _add_keywords_en(doc, en_kw)
+    _add_page_break(doc)
+    page_state["page"] += 1
+
+    _add_title(doc, "目  录", font="SimHei", bold=False)
+    _add_toc(doc)
+    _add_section_break(doc)
+    page_state["page"] += 1
+
+    md_files = [SETTINGS.input_dir / n for n in SETTINGS.chapter_order if (SETTINGS.input_dir / n).exists()]
+    if not md_files:
+        raise RuntimeError(f"no md files found in: {SETTINGS.input_dir}")
+
+    figures: list[FigureItem] = []
+    for idx, f in enumerate(md_files):
+        _parse_md_and_add(doc, f, figures, page_state, ref_nums, bookmark_state)
+        if idx != len(md_files) - 1:
+            _add_page_break(doc)
+            page_state["page"] += 1
+
+    out_docx = SETTINGS.output_docx
+    try:
+        doc.save(str(out_docx))
+    except PermissionError:
+        out_docx = SETTINGS.output_dir / f"{SETTINGS.output_docx.stem}_v2{SETTINGS.output_docx.suffix}"
+        doc.save(str(out_docx))
+
+    with SETTINGS.figure_log.open("w", newline="", encoding="utf-8") as fp:
+        w = csv.writer(fp)
+        w.writerow(["figure_caption", "source_path", "processed_path", "inserted_page"])
+        for f in figures:
+            w.writerow([f.caption, str(f.source_path), str(f.processed_path), f.inserted_page or ""])
+    return out_docx
+
+
+def resolve_output_docx_path(config_path: Path | None = None, output_name: str | None = None) -> Path:
+    settings = _load_settings(_resolve_default_config_path(config_path))
+    if output_name:
+        settings.output_docx = settings.output_dir / output_name
+    return settings.output_docx
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build thesis DOCX from a configured workspace.")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to workspace config JSON. Defaults to the active workspace pointer.",
+    )
+    parser.add_argument(
+        "--output-name",
+        help="Override the output DOCX filename inside the configured output directory.",
+    )
+    parser.add_argument(
+        "--print-output-path",
+        action="store_true",
+        help="Print the resolved output DOCX path and exit without building.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> Path | None:
+    args = _parse_args(argv)
+    settings = _load_settings(_resolve_default_config_path(args.config))
+    if args.output_name:
+        settings.output_docx = settings.output_dir / args.output_name
+    _activate_settings(settings)
+
+    if args.print_output_path:
+        print(SETTINGS.output_docx)
+        return SETTINGS.output_docx
+
+    return build()
+
+
+if __name__ == "__main__":
+    main()

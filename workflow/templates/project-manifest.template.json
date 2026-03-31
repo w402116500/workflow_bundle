@@ -1,0 +1,45 @@
+{
+  "project_id": "replace-me",
+  "title": "论文题目",
+  "discipline": "计算机类专业",
+  "project_type": "blockchain-fullstack",
+  "project_root": "/abs/path/to/project",
+  "chain_platform": "fisco",
+  "detection_confidence": "high",
+  "source_of_truth": {
+    "thesis": "polished_v3",
+    "evidence_docs": "docs/materials",
+    "evidence_code": "/abs/path/to/project",
+    "generated_output": "word_output"
+  },
+  "source_paths": {
+    "frontend": "path/to/frontend",
+    "backend": "path/to/backend",
+    "contracts": "path/to/contracts",
+    "chaincode": "",
+    "database": "path/to/schema.sql",
+    "ops_docs": "README.md",
+    "overview_docs": "docs"
+  },
+  "document_paths": {
+    "requirements": [
+      "path/to/requirements.md"
+    ],
+    "design": [
+      "path/to/design.md"
+    ],
+    "references": [
+      "path/to/references.md"
+    ],
+    "writing_rules": [
+      "path/to/thesis-writing-guide.md"
+    ]
+  },
+  "detected_stack": {
+    "frontend_framework": "vue",
+    "backend_framework": "spring-boot",
+    "database_kind": "mysql",
+    "chain_sdk": "fisco-java-sdk"
+  },
+  "missing_inputs": []
+}

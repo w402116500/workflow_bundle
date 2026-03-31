@@ -1,0 +1,11 @@
+{
+  "owner": "changer-changer",
+  "slug": "paper-reader",
+  "displayName": "Paper Reader",
+  "latest": {
+    "version": "1.0.0",
+    "publishedAt": 1773798567409,
+    "commit": "https://github.com/openclaw/skills/commit/da2c1b6bfd314527b0cbf0c7b9d537998f3b9805"
+  },
+  "history": []
+}

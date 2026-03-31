@@ -1,0 +1,108 @@
+{
+  "workspace_name": "health-record-fisco-demo",
+  "workspace_root": "../..",
+  "project_manifest": "workflow/configs/current_project_manifest.json",
+  "materials": {
+    "material_pack_json": "docs/materials/material_pack.json",
+    "material_pack_md": "docs/materials/material_pack.md",
+    "source_inventory_md": "docs/materials/source_inventory.md",
+    "missing_items_md": "docs/materials/missing_items.md",
+    "intake_report_md": "docs/materials/intake_report.md"
+  },
+  "tasks": {
+    "literature_plan_md": "docs/tasks/literature_plan.md"
+  },
+  "workflow_state": {
+    "handoff_json": "docs/workflow/handoff.json",
+    "handoff_md": "docs/workflow/handoff.md",
+    "execution_log_md": "docs/workflow/execution_log.md",
+    "workspace_lock_json": "docs/workflow/workspace.lock.json"
+  },
+  "writing": {
+    "project_profile_json": "docs/writing/project_profile.json",
+    "project_profile_md": "docs/writing/project_profile.md",
+    "thesis_outline_json": "docs/writing/thesis_outline.json",
+    "thesis_outline_md": "docs/writing/thesis_outline.md",
+    "literature_pack_json": "docs/writing/literature_pack.json",
+    "literature_pack_md": "docs/writing/literature_pack.md",
+    "reference_registry_json": "docs/writing/reference_registry.json",
+    "citation_audit_md": "docs/writing/citation_audit.md",
+    "research_dir": "docs/writing/research",
+    "research_index_json": "docs/writing/research_index.json",
+    "research_index_md": "docs/writing/research_index.md",
+    "chapter_queue_json": "docs/writing/chapter_queue.json",
+    "chapter_packets_dir": "docs/writing/chapter_packets",
+    "chapter_briefs_dir": "docs/writing/chapter_briefs",
+    "review_dir": "docs/writing/review",
+    "local_skill_path": "workflow/skills/academic-paper-crafter/SKILL.md",
+    "resume_skill_path": "workflow/skills/thesis-workflow-resume/SKILL.md",
+    "orchestrator_skill_path": "workflow/skills/thesis-workflow-orchestrator/SKILL.md",
+    "research_skill_path": "workflow/skills/paper-research-agent/SKILL.md",
+    "paper_reader_skill_path": "workflow/skills/paper-reader/SKILL.md"
+  },
+  "scaffold": {
+    "chapter_template_profile": "blockchain-fullstack"
+  },
+  "build": {
+    "input_dir": "polished_v3",
+    "diagram_dir": "docs/images",
+    "output_dir": "word_output",
+    "output_docx": "论文_润色版_规范排版_含配图_v29.docx",
+    "figure_log": "figure_insert_log_v29.csv",
+    "processed_image_dir": "processed_images",
+    "reference_file": "REFERENCES.md",
+    "abstract_cn_file": "00-摘要.md",
+    "abstract_en_file": "00-Abstract.md",
+    "chapter_order": [
+      "01-绪论.md",
+      "02-系统开发工具及技术介绍.md",
+      "03-需求分析.md",
+      "04-系统设计.md",
+      "05-系统实现.md",
+      "06-系统测试.md",
+      "07-结论与展望.md",
+      "08-致谢.md",
+      "REFERENCES.md"
+    ]
+  },
+  "defaults": {
+    "keywords_cn": "FISCO BCOS；区块链；健康档案；访问控制；存证审计",
+    "keywords_en": "FISCO BCOS; blockchain; health record; access control; notarization and audit"
+  },
+  "figure_map": {
+    "3.1": {
+      "caption": "图3.1 系统用例图",
+      "path": "docs/images/image.png"
+    },
+    "4.1": {
+      "caption": "图4.1 系统总体架构图",
+      "path": "docs/images/image-5.png"
+    },
+    "4.2": {
+      "caption": "图4.2 数据库E-R图",
+      "path": "docs/images/image-4.png"
+    },
+    "4.3": {
+      "caption": "图4.3 上传确认链上存证流程图",
+      "path": "docs/images/image-2.png"
+    },
+    "4.4": {
+      "caption": "图4.4 授权撤销权限校验流程图",
+      "path": "docs/images/image-6.png"
+    },
+    "4.5": {
+      "caption": "图4.5 带权限查询与审计追溯流程图",
+      "path": "docs/images/image-3.png"
+    },
+    "5.1": {
+      "caption": "图5.1 系统功能结构图",
+      "path": "docs/images/image-1.png"
+    }
+  },
+  "metadata": {
+    "project_root": "/home/ub/thesis_materials",
+    "title": "基于FISCO BCOS的健康档案系统设计与实现",
+    "discipline": "区块链工程",
+    "chain_platform": "fisco"
+  }
+}

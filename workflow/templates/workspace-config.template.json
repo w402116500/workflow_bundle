@@ -1,0 +1,89 @@
+{
+  "workspace_name": "replace-me",
+  "workspace_root": "../..",
+  "project_manifest": "workflow/configs/project_manifest.json",
+  "materials": {
+    "material_pack_json": "docs/materials/material_pack.json",
+    "material_pack_md": "docs/materials/material_pack.md",
+    "source_inventory_md": "docs/materials/source_inventory.md",
+    "missing_items_md": "docs/materials/missing_items.md",
+    "intake_report_md": "docs/materials/intake_report.md"
+  },
+  "tasks": {
+    "literature_plan_md": "docs/tasks/literature_plan.md"
+  },
+  "workflow_state": {
+    "handoff_json": "docs/workflow/handoff.json",
+    "handoff_md": "docs/workflow/handoff.md",
+    "execution_log_md": "docs/workflow/execution_log.md",
+    "workspace_lock_json": "docs/workflow/workspace.lock.json"
+  },
+  "writing": {
+    "project_profile_json": "docs/writing/project_profile.json",
+    "project_profile_md": "docs/writing/project_profile.md",
+    "thesis_outline_json": "docs/writing/thesis_outline.json",
+    "thesis_outline_md": "docs/writing/thesis_outline.md",
+    "literature_pack_json": "docs/writing/literature_pack.json",
+    "literature_pack_md": "docs/writing/literature_pack.md",
+    "reference_registry_json": "docs/writing/reference_registry.json",
+    "citation_audit_md": "docs/writing/citation_audit.md",
+    "research_dir": "docs/writing/research",
+    "research_index_json": "docs/writing/research_index.json",
+    "research_index_md": "docs/writing/research_index.md",
+    "chapter_queue_json": "docs/writing/chapter_queue.json",
+    "chapter_packets_dir": "docs/writing/chapter_packets",
+    "chapter_briefs_dir": "docs/writing/chapter_briefs",
+    "review_dir": "docs/writing/review",
+    "local_skill_path": "workflow/skills/academic-paper-crafter/SKILL.md",
+    "resume_skill_path": "workflow/skills/thesis-workflow-resume/SKILL.md",
+    "orchestrator_skill_path": "workflow/skills/thesis-workflow-orchestrator/SKILL.md",
+    "research_skill_path": "workflow/skills/paper-research-agent/SKILL.md",
+    "paper_reader_skill_path": "workflow/skills/paper-reader/SKILL.md"
+  },
+  "scaffold": {
+    "chapter_template_profile": "blockchain-fullstack"
+  },
+  "build": {
+    "input_dir": "polished_v3",
+    "diagram_dir": "docs/images",
+    "output_dir": "word_output",
+    "output_docx": "论文输出.docx",
+    "figure_log": "figure_insert_log.csv",
+    "processed_image_dir": "processed_images",
+    "reference_file": "REFERENCES.md",
+    "abstract_cn_file": "00-摘要.md",
+    "abstract_en_file": "00-Abstract.md",
+    "chapter_order": [
+      "01-绪论.md",
+      "02-系统开发工具及技术介绍.md",
+      "03-需求分析.md",
+      "04-系统设计.md",
+      "05-系统实现.md",
+      "06-系统测试.md",
+      "07-结论与展望.md",
+      "08-致谢.md",
+      "REFERENCES.md"
+    ]
+  },
+  "postprocess": {
+    "final_dir": "final",
+    "output_docx": "论文输出_windows_final.docx",
+    "figure_log": "figure_insert_log_final.csv"
+  },
+  "defaults": {
+    "keywords_cn": "请替换为中文关键词",
+    "keywords_en": "replace with english keywords"
+  },
+  "figure_map": {
+    "4.1": {
+      "caption": "图4.1 系统总体架构图",
+      "path": "docs/images/architecture.png"
+    }
+  },
+  "metadata": {
+    "project_root": "/abs/path/to/project",
+    "title": "论文题目",
+    "discipline": "计算机类",
+    "chain_platform": "fisco"
+  }
+}

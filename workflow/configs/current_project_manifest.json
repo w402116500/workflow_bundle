@@ -1,0 +1,50 @@
+{
+  "project_id": "health-record-fisco-demo",
+  "title": "基于FISCO BCOS的健康档案系统设计与实现",
+  "discipline": "区块链工程",
+  "project_type": "blockchain-fullstack",
+  "project_root": "/home/ub/thesis_materials",
+  "chain_platform": "fisco",
+  "detection_confidence": "high",
+  "source_of_truth": {
+    "thesis": "polished_v3",
+    "evidence_docs": "docs/materials",
+    "evidence_code": "/home/ub/thesis_materials",
+    "generated_output": "word_output"
+  },
+  "source_paths": {
+    "frontend": "code/frontend",
+    "backend": "code/backend",
+    "contracts": "code/contracts",
+    "chaincode": "",
+    "database": "code/sql/init.sql",
+    "ops_docs": "README.md",
+    "overview_docs": "docs"
+  },
+  "document_paths": {
+    "requirements": [
+      "docs/THESIS_REQUIREMENTS.md",
+      "docs/REQUIREMENTS_ANALYSIS.md"
+    ],
+    "design": [
+      "docs/DATA_AND_CONTRACT_DESIGN.md",
+      "docs/BACKEND_PLAN.md",
+      "docs/FRONTEND_PLAN.md",
+      "docs/THESIS_DIAGRAMS_LIST.md"
+    ],
+    "references": [
+      "docs/REFERENCES.md"
+    ],
+    "writing_rules": [
+      "docs/THESIS_WRITING_GUIDE.md",
+      "THESIS_WRITING_PLAN.md"
+    ]
+  },
+  "detected_stack": {
+    "frontend_framework": "vue",
+    "backend_framework": "spring-boot",
+    "database_kind": "mysql",
+    "chain_sdk": "fisco-java-sdk"
+  },
+  "missing_inputs": []
+}
