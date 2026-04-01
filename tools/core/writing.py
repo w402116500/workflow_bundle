@@ -196,6 +196,8 @@ def _project_profile_needs_refresh(profile: dict[str, Any]) -> bool:
     metadata = profile.get("metadata", {})
     if metadata.get("schema_version") != PROJECT_PROFILE_SCHEMA_VERSION:
         return True
+    if "5.1 实现总体说明" in chapter_required_subsections(profile, "05-系统实现.md"):
+        return True
     for chapter in {"04-系统设计.md", "05-系统实现.md", "06-系统测试.md"}:
         info = chapter_definition(profile, chapter)
         if "required_assets" not in info or "placeholder_policy" not in info:
@@ -203,7 +205,7 @@ def _project_profile_needs_refresh(profile: dict[str, Any]) -> bool:
     if "module_implementation_policy" not in chapter_definition(profile, "05-系统实现.md"):
         return True
     chapter5_policy = chapter_module_implementation_policy(profile, "05-系统实现.md")
-    if chapter5_policy.get("structure_mode") != "module-subfunctions-with-code-screenshots":
+    if chapter5_policy.get("structure_mode") != "module-subfunctions-with-inline-code":
         return True
     if any(not module.get("subfunctions") for module in profile.get("core_modules", [])):
         return True
@@ -1066,6 +1068,84 @@ def _select_preferred_entry_count(entries: list[dict[str, Any]], min_required: i
     return min(len(entries), max(min_required, preferred))
 
 
+def _select_entries_for_subfunction_coverage(
+    entries: list[dict[str, Any]],
+    subfunctions: list[dict[str, Any]],
+    min_required: int,
+    preferred: int,
+) -> list[dict[str, Any]]:
+    if not entries:
+        return []
+
+    target_count = _select_preferred_entry_count(entries, min_required, preferred)
+    selected: list[dict[str, Any]] = []
+    used_ids: set[str] = set()
+
+    def _best_match(entry: dict[str, Any]) -> tuple[int | None, int]:
+        if not subfunctions:
+            return None, 0
+        text = _entry_match_text(entry)
+        best_index = 0
+        best_score = -1
+        for index, subfunction in enumerate(subfunctions):
+            score = sum(1 for keyword in subfunction.get("keywords", []) if keyword and keyword in text)
+            if score > best_score:
+                best_index = index
+                best_score = score
+        return best_index, max(best_score, 0)
+
+    for subfunction in subfunctions:
+        keywords = [keyword for keyword in subfunction.get("keywords", []) if keyword]
+        if not keywords:
+            continue
+        ranked: list[tuple[int, int, dict[str, Any]]] = []
+        for original_index, entry in enumerate(entries):
+            entry_id = entry.get("id", "")
+            if entry_id in used_ids:
+                continue
+            text = _entry_match_text(entry)
+            score = sum(1 for keyword in keywords if keyword in text)
+            if score <= 0:
+                continue
+            ranked.append((score, original_index, entry))
+        if not ranked:
+            continue
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        chosen = ranked[0][2]
+        selected.append(chosen)
+        used_ids.add(chosen.get("id", ""))
+        if len(selected) >= target_count:
+            return selected
+
+    subfunction_loads = [0 for _ in subfunctions]
+    for entry in selected:
+        best_index, best_score = _best_match(entry)
+        if best_index is not None and best_score > 0:
+            subfunction_loads[best_index] += 1
+
+    ranked_remaining: list[tuple[int, int, int, dict[str, Any], int | None]] = []
+    for original_index, entry in enumerate(entries):
+        entry_id = entry.get("id", "")
+        if entry_id in used_ids:
+            continue
+        best_index, best_score = _best_match(entry)
+        load = subfunction_loads[best_index] if best_index is not None and best_score > 0 else 10**6
+        ranked_remaining.append((best_score, load, original_index, entry, best_index))
+
+    ranked_remaining.sort(key=lambda item: (-item[0], item[1], item[2]))
+    for best_score, _, _, entry, best_index in ranked_remaining:
+        entry_id = entry.get("id", "")
+        if entry_id in used_ids:
+            continue
+        selected.append(entry)
+        used_ids.add(entry_id)
+        if best_index is not None and best_score > 0:
+            subfunction_loads[best_index] += 1
+        if len(selected) >= target_count:
+            break
+    return selected
+
+
 def _module_subfunction_contracts(module: dict[str, Any], module_index: int) -> list[dict[str, Any]]:
     prefix = f"5.{module_index}"
     subfunctions = module.get("subfunctions", [])
@@ -1158,30 +1238,43 @@ def _resolve_chapter5_code_contract(project_profile: dict[str, Any], code_pack: 
     min_frontend = int(policy.get("min_frontend_entries_per_module", 1) or 1)
     preferred_backend = int(policy.get("preferred_backend_entries_per_module", min_backend) or min_backend)
     preferred_frontend = int(policy.get("preferred_frontend_entries_per_module", min_frontend) or min_frontend)
-    min_screenshots = int(policy.get("min_code_screenshots_per_module", 2) or 2)
+    require_code_screenshot_section = bool(policy.get("require_code_screenshot_section", False))
+    min_screenshots = int(policy.get("min_code_screenshots_per_module", 0) or 0)
 
     for idx, module in enumerate(modules, start=2):
         module_key = module.get("key", "")
         module_label = module.get("label", module_key)
         parent_section = f"5.{idx} {module_label}模块实现"
         subfunction_contracts = _module_subfunction_contracts(module, idx)
-        screenshot_section = f"5.{idx}.{len(subfunction_contracts) + 1} 关键代码截图"
+        screenshot_section = f"5.{idx}.{len(subfunction_contracts) + 1} 关键代码截图" if require_code_screenshot_section else None
 
         backend_entries = [entry for entry in entries if entry.get("module_key") == module_key and entry.get("side") == "backend"]
         frontend_entries = [entry for entry in entries if entry.get("module_key") == module_key and entry.get("side") == "frontend"]
-        selected_backend = backend_entries[: _select_preferred_entry_count(backend_entries, min_backend, preferred_backend)]
-        selected_frontend = frontend_entries[: _select_preferred_entry_count(frontend_entries, min_frontend, preferred_frontend)]
-        screenshot_entries = selected_backend[:1] + selected_frontend[:1]
-        if len(screenshot_entries) < min_screenshots:
-            extra_pool = [entry for entry in backend_entries + frontend_entries if entry not in screenshot_entries]
-            screenshot_entries.extend(extra_pool[: max(0, min_screenshots - len(screenshot_entries))])
-        screenshot_entries = screenshot_entries[:min_screenshots]
+        selected_backend = _select_entries_for_subfunction_coverage(
+            backend_entries,
+            subfunction_contracts,
+            min_backend,
+            preferred_backend,
+        )
+        selected_frontend = _select_entries_for_subfunction_coverage(
+            frontend_entries,
+            subfunction_contracts,
+            min_frontend,
+            preferred_frontend,
+        )
+        screenshot_entries: list[dict[str, Any]] = []
+        if require_code_screenshot_section and min_screenshots > 0:
+            screenshot_entries = selected_backend[:1] + selected_frontend[:1]
+            if len(screenshot_entries) < min_screenshots:
+                extra_pool = [entry for entry in backend_entries + frontend_entries if entry not in screenshot_entries]
+                screenshot_entries.extend(extra_pool[: max(0, min_screenshots - len(screenshot_entries))])
+            screenshot_entries = screenshot_entries[:min_screenshots]
 
         if len(selected_backend) < min_backend:
             issues.append(f"chapter 5 module {module_label} missing backend code evidence")
         if len(selected_frontend) < min_frontend:
             issues.append(f"chapter 5 module {module_label} missing frontend code evidence")
-        if len(screenshot_entries) < min_screenshots:
+        if require_code_screenshot_section and len(screenshot_entries) < min_screenshots:
             issues.append(f"chapter 5 module {module_label} missing code screenshots")
 
         required_code_evidence.extend(
@@ -1202,7 +1295,7 @@ def _resolve_chapter5_code_contract(project_profile: dict[str, Any], code_pack: 
                 },
             ]
         )
-        required_code_screenshot_count += min_screenshots
+        required_code_screenshot_count += min_screenshots if require_code_screenshot_section else 0
 
         for entry in selected_backend + selected_frontend:
             if subfunction_contracts:
@@ -1233,22 +1326,23 @@ def _resolve_chapter5_code_contract(project_profile: dict[str, Any], code_pack: 
                     }
                 )
 
-        for entry in screenshot_entries:
-            code_evidence_to_section_map.append(
-                {
-                    "entry_id": entry.get("id", ""),
-                    "module_key": module_key,
-                    "module_label": module_label,
-                    "target_section": screenshot_section,
-                    "render_as": "code-screenshot",
-                    "required": True,
-                    "side": entry.get("side", ""),
-                    "source_path": entry.get("source_path", ""),
-                    "screenshot_path": entry.get("screenshot_path", ""),
-                    "snippet_path": entry.get("snippet_path", ""),
-                    "symbol": entry.get("symbol", ""),
-                }
-            )
+        if require_code_screenshot_section and screenshot_section:
+            for entry in screenshot_entries:
+                code_evidence_to_section_map.append(
+                    {
+                        "entry_id": entry.get("id", ""),
+                        "module_key": module_key,
+                        "module_label": module_label,
+                        "target_section": screenshot_section,
+                        "render_as": "code-screenshot",
+                        "required": True,
+                        "side": entry.get("side", ""),
+                        "source_path": entry.get("source_path", ""),
+                        "screenshot_path": entry.get("screenshot_path", ""),
+                        "snippet_path": entry.get("snippet_path", ""),
+                        "symbol": entry.get("symbol", ""),
+                    }
+                )
 
         module_contracts.append(
             {
@@ -1298,7 +1392,7 @@ def _chapter_execution_steps(chapter: str, queue_entry: dict[str, Any], skill_re
     return [
         f"先核对 `docs/writing/thesis_outline.md`，确认当前章节标题、小节层级和目录未偏离既定大纲。",
         f"阅读 `{skill_rel_path}`、chapter packet、material_pack、literature_pack、reference_registry 和 research sidecar。",
-        "若当前章节包含代码实现合同，先从工作区中的 code_evidence_pack 与白底黑字代码截图中取材，不要重新回源仓库摘录。",
+        "若当前章节包含代码实现合同，先从工作区中的 code_evidence_pack 与 code_snippets 中取材，不要重新回源仓库摘录。",
         f"按当前章节标题、小节结构和 chapter_assets 合同，将 raw draft 写入 `{target_path}`。",
         "确保图题、表题、附录条目和测试证据不会被改写成纯叙述文本；若缺少真实资产，必须保留显式占位。",
         f"raw draft 完成后，执行 `finalize-chapter --chapter {chapter} --status drafted`。",
@@ -1669,8 +1763,11 @@ def _chapter_packet(
                 )
                 or "none"
             )
-            + " | screenshots: "
-            + (", ".join(entry["screenshot_path"] for entry in module["code_screenshots"]) or "missing")
+            + (
+                " | screenshots: " + (", ".join(entry["screenshot_path"] for entry in module["code_screenshots"]) or "missing")
+                if module.get("code_screenshot_section")
+                else " | inline-code-only"
+            )
             for module in code_contract["module_implementation_contract"]
         ]
     ) or "- no chapter-specific code evidence"
@@ -1728,8 +1825,11 @@ def _chapter_packet(
                 "Both backend and frontend paragraphs are mandatory in every chapter 5 subfunction subsection, even when one side is shorter.\n",
                 "Backend paragraphs should focus on interface orchestration, role checks, database persistence, and chain interaction when applicable; frontend paragraphs should focus on page entry, form/list interaction, state feedback, and route flow.\n",
                 "Do not let chapter 5 drift into a pure development chronology such as 'first backend, then frontend, then interface联调'; present the implementation as completed business capabilities.\n",
-                "Each module must still keep a final dedicated code screenshot subsection, and those screenshots must come from the real white-background code evidence pack.\n",
-                "Do not invent code blocks. Only use the extracted snippet and screenshot paths already staged in the workspace.\n",
+                "Prefer direct fenced code blocks inside the matching backend/frontend paragraphs instead of a separate code screenshot subsection.\n",
+                "If code screenshots are used, insert them immediately after the matching backend or frontend code block inside that same subfunction; do not create a standalone `关键代码截图` subsection.\n",
+                "Code screenshots in chapter 5 are inline implementation evidence only; do not assign figure numbers, `图5.x` captions, or separate caption paragraphs to them.\n",
+                "When real page screenshots are available, place them in the frontend implementation part of the matching subfunction instead of using code screenshots.\n",
+                "Do not invent code blocks. Only use the extracted snippet and staged page-image assets already available in the workspace.\n",
                 "The chapter closing paragraph should summarize the implemented business capabilities and their support for subsequent system testing, rather than repeating the section list.\n",
             ]
         )
@@ -1908,10 +2008,13 @@ def _brief_style_rules(chapter: str, research_contract: dict[str, Any]) -> list[
         rules.extend(
             [
                 "第 5 章按业务模块组织，而不是按前端/后端开发顺序组织。",
-                "每个模块先写业务职责，再写子功能实现，最后保留关键代码截图小节。",
+                "每个模块先写业务职责，再写子功能实现，代码应直接嵌入对应子功能，不单独拆代码截图小节。",
+                "若使用代码截图，必须紧跟在对应的后端或前端代码块之后插入，不能单独生成“关键代码截图”小节。",
+                "代码截图仅作为实现证据插图使用，不编号，不写“图5.x”题注，也不单独形成图题段落。",
                 "每个子功能小节都必须同时出现“后端实现。”和“前端实现。”两段，顺序固定为后端在前、前端在后。",
                 "后端段落应落到接口、服务编排、角色校验、数据库写入和链上协同；前端段落应落到页面入口、表单/列表交互、状态反馈和路由跳转。",
-                "只能使用已抽取到工作区的真实代码证据与白底黑字截图，不得自造代码块。",
+                "优先直接嵌入工作区已抽取的真实代码片段；若存在真实页面截图，应放在对应前端实现段落之后。",
+                "只能使用已抽取到工作区的真实代码证据与页面截图，不得自造代码块。",
             ]
         )
     elif chapter == "06-系统测试.md":
@@ -2053,12 +2156,14 @@ def _render_chapter_brief_md(packet: dict[str, Any], debug_packet_md_rel_path: s
         for module in packet.get("module_implementation_contract", []):
             lines.append(f"- {module['module_label']}")
             lines.append(f"  - parent_section: {module['parent_section']}")
-            lines.append(f"  - code_screenshot_section: {module['code_screenshot_section']}")
+            if module.get("code_screenshot_section"):
+                lines.append(f"  - code_screenshot_section: {module['code_screenshot_section']}")
             for subfunction in module.get("subfunctions", []):
                 lines.append(f"  - subfunction: {subfunction['section']}")
                 lines.append(f"    - backend_evidence_ids: {_brief_entry_ids(subfunction.get('backend_entries', []))}")
                 lines.append(f"    - frontend_evidence_ids: {_brief_entry_ids(subfunction.get('frontend_entries', []))}")
-            lines.append(f"  - screenshot_evidence_ids: {_brief_entry_ids(module.get('code_screenshots', []))}")
+            if module.get("code_screenshot_section"):
+                lines.append(f"  - screenshot_evidence_ids: {_brief_entry_ids(module.get('code_screenshots', []))}")
         lines.append("")
     lines.extend(
         [
@@ -2286,7 +2391,8 @@ def _render_chapter_packet_md(packet: dict[str, Any]) -> str:
     for module in packet.get("module_implementation_contract", []):
         lines.append(f"- {module['module_label']}")
         lines.append(f"  - parent_section: {module['parent_section']}")
-        lines.append(f"  - code_screenshot_section: {module['code_screenshot_section']}")
+        if module.get("code_screenshot_section"):
+            lines.append(f"  - code_screenshot_section: {module['code_screenshot_section']}")
         for subfunction in module.get("subfunctions", []):
             lines.append(f"  - subfunction: {subfunction['section']}")
             lines.append(
@@ -2301,9 +2407,10 @@ def _render_chapter_packet_md(packet: dict[str, Any]) -> str:
         lines.append(
             f"  - frontend_entries: {', '.join(entry['source_path'] for entry in module['frontend_entries']) or 'none'}"
         )
-        lines.append(
-            f"  - code_screenshots: {', '.join(entry['screenshot_path'] for entry in module['code_screenshots']) or 'none'}"
-        )
+        if module.get("code_screenshot_section"):
+            lines.append(
+                f"  - code_screenshots: {', '.join(entry['screenshot_path'] for entry in module['code_screenshots']) or 'none'}"
+            )
     if not packet.get("module_implementation_contract"):
         lines.append("- none")
     lines.append("")
@@ -2404,7 +2511,8 @@ def _render_chapter_start_md(packet: dict[str, Any], brief_rel_path: str, debug_
     for module in packet.get("module_implementation_contract", []):
         lines.append(f"- {module['module_label']}")
         lines.append(f"  - parent_section: {module['parent_section']}")
-        lines.append(f"  - code_screenshot_section: {module['code_screenshot_section']}")
+        if module.get("code_screenshot_section"):
+            lines.append(f"  - code_screenshot_section: {module['code_screenshot_section']}")
         for subfunction in module.get("subfunctions", []):
             lines.append(f"  - subfunction: {subfunction['section']}")
             lines.append(
@@ -2419,9 +2527,10 @@ def _render_chapter_start_md(packet: dict[str, Any], brief_rel_path: str, debug_
         lines.append(
             f"  - frontend_entries: {', '.join(entry['source_path'] for entry in module.get('frontend_entries', [])) or 'none'}"
         )
-        lines.append(
-            f"  - code_screenshots: {', '.join(entry['screenshot_path'] for entry in module.get('code_screenshots', [])) or 'none'}"
-        )
+        if module.get("code_screenshot_section"):
+            lines.append(
+                f"  - code_screenshots: {', '.join(entry['screenshot_path'] for entry in module.get('code_screenshots', [])) or 'none'}"
+            )
     if not packet.get("module_implementation_contract"):
         lines.append("- no chapter-specific code evidence")
     lines.extend(

@@ -880,7 +880,7 @@ def build_workspace_snapshot(
             "read chapter_briefs before chapter_packets",
             "sync workflow assets when workflow_signature_status is drifted",
             "do not continue chapter writing when packet_outline_status is stale/legacy/missing",
-            "chapter 5 must consume code_evidence_pack, snippets, and white-background code screenshots",
+            "chapter 5 must consume code_evidence_pack, inline code snippets, and staged page screenshots when available",
             "drafted chapters must be polished with academic-paper-crafter before reviewed status",
         ],
     }

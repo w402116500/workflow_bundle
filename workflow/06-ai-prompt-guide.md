@@ -120,7 +120,7 @@ chapter_file: <例如 05-系统实现.md>
 2. 如果 workflow_signature_status 是 drifted，先 sync-workflow-assets，再重新 resume。
 3. 先读 docs/writing/chapter_briefs/<chapter_file>，只有必要时再读 chapter_packets。
 4. 写作必须以 polished_v3/<chapter_file> 为正文真源。
-5. 第 5 章必须优先使用 code_evidence_pack、代码片段和白底黑字代码截图。
+5. 第 5 章必须优先使用 code_evidence_pack、代码片段和白底黑字代码截图，且代码截图只能内嵌到对应子功能段内，不能另起“关键代码截图”小节。
 6. 第 6 章必须优先使用测试证据，不要把规划和设计文档当测试结论。
 7. 完成原稿后，调用 $academic-paper-crafter 进行学术化润色，再 finalize-chapter 到 polished。
 8. 引用保持顺序编号，避免一处连续堆叠多条引用。

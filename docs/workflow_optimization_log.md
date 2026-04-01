@@ -218,6 +218,75 @@
     - `backend/TEST_REPORT.md`
     - `茶叶质量安全溯源系统全流程手动测试文档.md`
     - `茶叶质量安全溯源系统前端全流程手动测试文档.md`
+
+## 2026-04-01 16:46:30 +0800
+
+### Step 24
+- Action: Completed the remaining Chapter 5 inline-code workflow refactor in `workflow_bundle/tools/core/chapter_profile.py` and `workflow_bundle/tools/core/writing.py`, then re-synced the root compatibility mirror.
+- Purpose: Replace the last “关键代码截图” assumptions in the bundle so new conversations and regenerated packets default to inline code blocks inside each Chapter 5 subfunction.
+- Result:
+  - Chapter 5 module policy now locks to `module-subfunctions-with-inline-code`.
+  - `require_code_screenshot_section` is `False` and `required_code_screenshot_count` can fall to `0`.
+  - Packet / brief rendering no longer force-display empty screenshot sections when the module contract is inline-code-only.
+  - `sync_root_compat.sh` and `check_bundle_sync.sh` both passed.
+
+### Step 25
+- Action: Refreshed the Teatrace workspace workflow assets and regenerated Chapter 5 writing artifacts with:
+  - `python3 workflow_bundle/tools/cli.py sync-workflow-assets --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `python3 workflow_bundle/tools/cli.py prepare-writing --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `python3 workflow_bundle/tools/cli.py prepare-chapter --config workspaces/teatrace_thesis/workflow/configs/workspace.json --chapter 05-系统实现.md`
+- Purpose: Make the workspace consume the new bundle contract instead of the stale screenshot-oriented Chapter 5 packet.
+- Result:
+  - Regenerated Chapter 5 packet no longer contains `5.2.4 关键代码截图`.
+  - `module_implementation_policy` now records inline-code requirements, mandatory `后端实现。/前端实现。` paragraph order, and frontend page-screenshot preference.
+  - Chapter 5 packet now reports `required_code_screenshot_count: 0`.
+
+### Step 26
+- Action: Rewrote the `5.2 用户与权限管理模块实现` section in `workspaces/teatrace_thesis/polished_v3/05-系统实现.md`.
+- Purpose: Align the current thesis正文 with the original optimized sample style instead of leaving it as abstract overview prose.
+- Result:
+  - `5.2.1` now uses real backend registration/login code plus a real registration-login page screenshot already staged in the workspace.
+  - `5.2.2` now uses real backend institution-audit / chain-identity-binding code and real frontend audit-page code.
+  - `5.2.3` now uses real backend user-query / role-update code and real frontend user-management code, while keeping the existing admin dashboard and forbidden-page screenshots.
+  - The obsolete `5.2.4 关键代码截图` subsection was removed from the正文.
+  - Figure numbering in Chapter 5 was rebalanced so the newly inserted page screenshot does not break later figure order.
+
+### Step 27
+- Action: Ran syntax validation and post-change verification.
+- Purpose: Confirm that both the workflow code and regenerated workspace artifacts are internally consistent after the Chapter 5 inline-code migration.
+- Result:
+  - `python3 -m py_compile workflow_bundle/tools/core/chapter_profile.py workflow_bundle/tools/core/writing.py` passed.
+  - The regenerated Chapter 5 packet and brief now expose the new subsection tree and inline-code writing contract.
+
+### Current Next Actions
+- Continue rewriting the remaining Chapter 5 modules (`5.3` to `5.6`) from “代码截图小节” to “子功能内联代码” so the current Teatrace正文 fully matches the new workflow contract.
+- When needed later, generate white-background black-text code images from the already embedded code blocks instead of reintroducing screenshot-only writing rules.
+
+### Step 28
+- Action: Refactored `workflow_bundle/tools/core/code_evidence.py` to extract multiple code snippets from a single source file and to include both script snippets and template snippets for Vue pages when useful.
+- Purpose: Fix the material gap where the inline-code Chapter 5 workflow knew the correct subsection structure but still lacked enough staged source evidence to cover every subfunction.
+- Result:
+  - The identity module code evidence pack now includes separate backend entries such as `Register`, `Login`, `UpdateUserRole`, `AuditOrg`, and `BindChainIdentity`.
+  - The identity module frontend evidence now includes real page code from `RegisterPage.vue`, `LoginPage.vue`, `UsersPage.vue`, and `PendingOrgsPage.vue`.
+  - White-background code screenshots are still generated as artifacts, but they are now by-products of richer snippet extraction rather than the primary Chapter 5 writing target.
+
+### Step 29
+- Action: Updated Chapter 5 subfunction keyword matching and code-contract selection logic in `workflow_bundle/tools/core/chapter_profile.py` and `workflow_bundle/tools/core/writing.py`.
+- Purpose: Make packet generation choose code evidence by subfunction coverage instead of taking the first few snippets in module order.
+- Result:
+  - Chapter 5 modules now prefer up to four backend and four frontend code entries per module.
+  - The code-selection step now first covers each business subfunction, then uses remaining quota to补强 the most relevant subfunction instead of falling back to arbitrary early files.
+  - The stale `project_profile` cache was invalidated by bumping `PROJECT_PROFILE_SCHEMA_VERSION` so the new preference counts actually take effect in the workspace.
+
+### Step 30
+- Action: Re-ran bundle sync, re-executed `extract`, and regenerated the Teatrace Chapter 5 packet after the new code-evidence logic landed.
+- Purpose: Verify that the workflow can now auto-assemble materially better Chapter 5 writing inputs for the user-and-permission module.
+- Result:
+  - The regenerated Chapter 5 packet now maps the identity module as follows:
+    - `5.2.1` gets backend registration code and frontend registration/login code.
+    - `5.2.2` gets backend institution-audit plus chain-identity-binding code and frontend pending-organization audit code.
+    - `5.2.3` gets backend user-role-governance code and frontend user-management code.
+  - This resolves the earlier workflow defect where `5.2.2` lacked frontend evidence and `5.2.3` lacked backend evidence.
   - Chapter 6 required `test_artifacts` now resolve to the backend test report and full manual test document instead of falling back to the overall project doc and task book.
 
 ### Step 24
@@ -3307,3 +3376,469 @@
   - Runtime status after verification:
     - `python3 workflow_bundle/tools/cli.py resume --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
     - workspace phase returned to `linux-release-ready`
+
+### Step 172
+- Action: Reworked the code screenshot renderer to use Chinese-capable fonts and larger image metrics, then regenerated the Teatrace code evidence pack and DOCX deliverable.
+- Purpose: Fix the Chapter 5 code screenshots that were blurry in Word and rendered Chinese strings as garbled glyphs or empty boxes.
+- Result:
+  - Updated renderer:
+    - `workflow_bundle/tools/core/code_evidence.py`
+  - Workflow changes:
+    - added ordered font candidates for code screenshots, prioritizing Chinese-capable fonts such as `WenQuanYi Zen Hei Mono`, `WenQuanYi Zen Hei`, `Noto Sans Mono CJK SC`, and `Noto Sans CJK SC`
+    - added file-based fallback font paths for Linux environments where family names may differ
+    - increased screenshot render density by raising default `font_size`, `image_pad`, and `line_pad`
+  - Regenerated artifacts:
+    - `workspaces/teatrace_thesis/docs/materials/code_evidence_pack.json`
+    - `workspaces/teatrace_thesis/docs/materials/code_evidence_pack.md`
+    - `workspaces/teatrace_thesis/docs/materials/code_screenshots/01-identity-frontend-07-submit.png`
+    - `workspaces/teatrace_thesis/docs/materials/code_screenshots/01-identity-backend-01-register.png`
+    - `workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`
+  - Visual verification:
+    - `01-identity-frontend-07-submit.png` regenerated as `1043x783`
+    - `01-identity-backend-01-register.png` regenerated as `2225x888`
+    - Chinese literals such as “通过审核时请填写联盟链组织标识” and “机构已通过审核” render normally in the regenerated frontend screenshot
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/code_evidence.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py extract-code --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - Release state:
+    - Linux delivery artifact rebuilt successfully
+    - citation verification summary remained clean with `anchors missing bookmarks: 0`
+
+### Step 173
+- Action: Fixed the code screenshot font-selection strategy to explicitly prefer a deterministic Chinese-capable monospace font, and added an environment-variable override for future custom fonts.
+- Purpose: Remove ambiguity in screenshot rendering so the workflow does not depend on whichever font library happens to load first, and allow later replacement with a preferred thesis code font without patching the renderer again.
+- Result:
+  - Updated renderer:
+    - `workflow_bundle/tools/core/code_evidence.py`
+  - Workflow changes:
+    - added `THESIS_CODE_SCREENSHOT_FONT` override support so a downloaded custom font path can be injected without code edits
+    - changed the primary Linux font preference to the installed `WenQuanYi Zen Hei Mono` font file at `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`
+    - kept secondary fallback candidates including `Sarasa Mono SC`, `Sarasa Mono Slab SC`, `Noto Sans Mono CJK SC`, and `Noto Sans CJK SC`
+    - recorded the actually used screenshot font into `code_evidence_pack` metadata for later diagnosis
+  - Regenerated artifacts:
+    - `workspaces/teatrace_thesis/docs/materials/code_evidence_pack.json`
+    - `workspaces/teatrace_thesis/docs/materials/code_evidence_pack.md`
+    - `workspaces/teatrace_thesis/docs/materials/code_screenshots/01-identity-frontend-07-submit.png`
+    - `workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`
+  - Verification:
+    - `code_evidence_pack.json` now records `code_screenshot_font` as `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`
+    - regenerated frontend screenshot remains clear at `1043x783` and Chinese literals render normally
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/code_evidence.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py extract-code --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 174
+- Action: Fixed the DOCX code-block renderer to use the same Chinese-capable font strategy as the extracted code screenshot renderer, then rebuilt the Teatrace Word deliverable.
+- Purpose: Resolve the remaining Chinese garbling in Word where fenced Markdown code blocks were being rendered through a separate image path that still fell back to `ImageFont.load_default()` on Linux.
+- Result:
+  - Updated renderer:
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+  - Workflow changes:
+    - added Linux-first code-block font candidates including `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`, `NotoSansMono-Regular.ttf`, and `NotoMono-Regular.ttf`
+    - preserved Windows font candidates as fallback for Windows packaging
+    - added `THESIS_CODE_SCREENSHOT_FONT` support to the DOCX code-block renderer so both screenshot paths can be overridden consistently
+  - Verified outputs:
+    - regenerated `word_output/processed_images/codeblock_05-系统实现_11.png` now renders the UsersPage Vue code block with correct Chinese text such as “按账号/姓名/机构关键词筛选”“角色筛选”“调角色”“绑链身份”
+    - confirmed the regenerated code-block image is embedded into the rebuilt DOCX as `word/media/image20.png`
+    - rebuilt deliverable: `workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/build_final_thesis_docx.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 175
+- Action: Standardized code rendering style toward the thesis code-block layout rule, then regenerated both extracted code screenshots and the DOCX deliverable.
+- Purpose: Align code presentation with the requested paper style by keeping code images on a white background with black text, adding a thin black border, tightening line spacing, and preferring a `Consolas`-like monospace font where available.
+- Result:
+  - Updated renderers:
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+    - `workflow_bundle/tools/core/code_evidence.py`
+  - Workflow changes:
+    - added `Consolas` Windows font paths to the priority list while keeping Linux Chinese-capable fallbacks
+    - set DOCX code-block rendering to a smaller monospace size closer to 10pt visual output
+    - reduced inter-line leading to a near single-line style
+    - added a 1px black border around both Markdown code-block images and extracted code screenshot images
+    - kept the background as pure white and the text as black as requested
+    - added a small left-indent for DOCX code-block paragraphs to keep them left-aligned but visually separated from body text
+  - Environment note:
+    - current Linux host does not provide a native `Consolas` font, so rendering falls back to locally available Chinese-capable monospace fonts; if a real `Consolas` file is later installed or passed through `THESIS_CODE_SCREENSHOT_FONT`, the workflow will switch to it automatically
+  - Verified outputs:
+    - regenerated screenshot `workspaces/teatrace_thesis/docs/materials/code_screenshots/01-identity-frontend-06-userspage-template.png` now uses white background, black text, and a thin black border
+    - regenerated DOCX code-block image `workspaces/teatrace_thesis/word_output/processed_images/codeblock_05-系统实现_11.png` now uses the same white-background black-text bordered style
+    - rebuilt deliverable: `workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/build_final_thesis_docx.py /home/ub/thesis_materials/workflow_bundle/tools/core/code_evidence.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py extract-code --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 176
+- Action: Bundled an official open-source monospace Chinese font into the workflow project and switched both code renderers to prefer the project-local font over system fonts.
+- Purpose: Remove host-font dependency so code screenshots and DOCX code blocks render consistently across fresh environments and new AI sessions.
+- Result:
+  - Added bundled font assets:
+    - `workflow_bundle/assets/fonts/sarasa-mono-sc/SarasaMonoSC-Regular.ttf`
+    - `workflow_bundle/assets/fonts/sarasa-mono-sc/SarasaMonoSC-Bold.ttf`
+    - `workflow_bundle/assets/fonts/sarasa-mono-sc/LICENSE`
+    - `workflow_bundle/assets/fonts/README.md`
+  - Font source:
+    - official release: `https://github.com/be5invis/Sarasa-Gothic/releases/tag/v1.0.37`
+    - package used: `SarasaMono-TTF-1.0.37.zip`
+    - extracted only the SC regular and bold files needed by the workflow
+  - Updated renderers:
+    - `workflow_bundle/tools/core/code_evidence.py`
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+  - Workflow changes:
+    - added project-local font discovery so renderers first search `assets/fonts/sarasa-mono-sc/SarasaMonoSC-Regular.ttf`
+    - preserved system-font fallback only as a secondary safety net
+    - documented the vendored font package and usage rules in `assets/fonts/README.md`
+  - Verification:
+    - `code_evidence_pack.json` now records `code_screenshot_font` as `/home/ub/thesis_materials/workflow_bundle/assets/fonts/sarasa-mono-sc/SarasaMonoSC-Regular.ttf`
+    - regenerated screenshot `docs/materials/code_screenshots/01-identity-frontend-06-userspage-template.png` renders with the bundled font
+    - regenerated DOCX code-block image `word_output/processed_images/codeblock_05-系统实现_11.png` renders with the bundled font and is embedded into the rebuilt DOCX
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/code_evidence.py /home/ub/thesis_materials/workflow_bundle/tools/core/build_final_thesis_docx.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py extract-code --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 177
+- Action: Tried the user-provided SiYuan HeiTi font package and switched the workflow font preference to the bundled `SourceHanSansSC-Regular-2.otf`.
+- Purpose: Compare a user-specified Chinese font against the bundled Sarasa font and verify whether it produces a cleaner visual result for the thesis code images.
+- Result:
+  - Added bundled font asset:
+    - `workflow_bundle/assets/fonts/siyuan-heiti/SourceHanSansSC-Regular-2.otf`
+  - Updated docs:
+    - `workflow_bundle/assets/fonts/README.md`
+  - Updated renderers:
+    - `workflow_bundle/tools/core/code_evidence.py`
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+  - Workflow changes:
+    - changed bundled-font preference order so renderers now try `siyuan-heiti/SourceHanSansSC-Regular-2.otf` before `sarasa-mono-sc/SarasaMonoSC-Regular.ttf`
+  - Verification:
+    - `code_evidence_pack.json` now records `code_screenshot_font` as `/home/ub/thesis_materials/workflow_bundle/assets/fonts/siyuan-heiti/SourceHanSansSC-Regular-2.otf`
+    - regenerated `docs/materials/code_screenshots/01-identity-frontend-06-userspage-template.png` uses the new bundled font
+    - regenerated `word_output/processed_images/codeblock_05-系统实现_11.png` uses the new bundled font and is embedded in the rebuilt DOCX
+    - rebuilt deliverable: `workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/code_evidence.py /home/ub/thesis_materials/workflow_bundle/tools/core/build_final_thesis_docx.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py extract-code --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 178
+- Action: Finalized SiYuan HeiTi as the default bundled code-rendering font for the workflow.
+- Purpose: Lock the preferred code font choice so future workflow runs and new AI sessions consistently use the same font without re-deciding between SiYuan HeiTi and Sarasa Mono SC.
+- Result:
+  - Documentation updates:
+    - `workflow_bundle/assets/fonts/README.md` now states that `siyuan-heiti/SourceHanSansSC-Regular-2.otf` is the current default code-rendering font
+    - `Sarasa Mono SC` is kept as the secondary bundled fallback
+  - Effective runtime state:
+    - code screenshots default to `SourceHanSansSC-Regular-2.otf`
+    - DOCX code-block images default to `SourceHanSansSC-Regular-2.otf`
+    - rebuilt Linux delivery artifact remains current at `workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`
+
+### Step 179
+- Action: Replaced the `Pygments ImageFormatter` screenshot path with the same shared PIL-based code renderer used by DOCX code blocks.
+- Purpose: Eliminate the last divergent rendering path after continued reports of garbled code screenshots even when fonts had already been switched, so all code images are now generated by one deterministic renderer.
+- Result:
+  - Added shared renderer:
+    - `workflow_bundle/tools/core/code_image_renderer.py`
+  - Updated renderers:
+    - `workflow_bundle/tools/core/code_evidence.py`
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+  - Workflow changes:
+    - removed code-evidence dependence on `Pygments ImageFormatter` for image generation
+    - unified code screenshot rendering and DOCX fenced-code rendering onto the same PIL drawing implementation
+    - both renderers now share the same bundled-font resolution path and the same white-background black-text bordered output style
+  - Verification:
+    - `code_evidence_pack.json` still records the bundled `SourceHanSansSC-Regular-2.otf` path as the effective code font
+    - regenerated screenshot `docs/materials/code_screenshots/01-identity-frontend-06-userspage-template.png` and DOCX code-block image `word_output/processed_images/codeblock_05-系统实现_11.png` now come from the same renderer
+    - rebuilt deliverable remains `workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/code_image_renderer.py /home/ub/thesis_materials/workflow_bundle/tools/core/code_evidence.py /home/ub/thesis_materials/workflow_bundle/tools/core/build_final_thesis_docx.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py extract-code --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 180
+- Action: Fixed the remaining code-image square-box artifacts by normalizing tab indentation before drawing, synced workflow assets into the workspace, and rebuilt a fresh DOCX deliverable with a new filename.
+- Purpose: Resolve the last user-reported "乱码" issue in Word after font replacement had already been completed, and verify that the regenerated DOCX actually embeds the updated code images instead of a stale cached artifact.
+- Result:
+  - Root cause confirmed:
+    - the remaining artifacts were not Chinese glyph corruption
+    - the visible square boxes came from literal `tab` indentation characters in code snippets being rendered directly into the image
+  - Updated renderer:
+    - `workflow_bundle/tools/core/code_image_renderer.py`
+  - Workflow changes:
+    - normalized every rendered code line with `line.expandtabs(4).replace("\\r", "")` before measuring and drawing
+    - kept the shared white-background black-text bordered renderer for both `extract-code` evidence screenshots and DOCX fenced-code blocks
+    - synced workspace workflow assets so the workspace signature returned to `current`
+  - Verification:
+    - regenerated evidence screenshot `workspaces/teatrace_thesis/docs/materials/code_screenshots/01-identity-backend-03-updateuserrole.png` no longer shows square-box indentation
+    - regenerated processed DOCX code image `workspaces/teatrace_thesis/word_output/processed_images/codeblock_05-系统实现_11.png` is clean
+    - hash check confirmed `codeblock_05-系统实现_11.png` is embedded into `workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v3.docx` as `word/media/image20.png`
+    - rebuilt deliverable: `workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v3.docx`
+  - Validation passed:
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v3.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v3.docx`
+
+### Step 181
+- Action: Unified the visible code font size in the generated DOCX by changing both code-line wrapping and Word image insertion scale.
+- Purpose: Fix the new issue where some code blocks looked larger and others smaller even though the renderer was using the same font size, which made the thesis implementation chapter look inconsistent.
+- Result:
+  - Root cause confirmed:
+    - all code screenshots were rendered with the same pixel font size
+    - but the DOCX builder inserted every code image at a fixed width of `6.0` inches
+    - narrow images were enlarged while wide images were compressed, so the apparent font size became inconsistent in Word
+  - Updated renderers:
+    - `workflow_bundle/tools/core/code_image_renderer.py`
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+  - Workflow changes:
+    - added maximum-width line wrapping in the shared code image renderer so extra-long lines are split before the image becomes excessively wide
+    - replaced the fixed-width DOCX insertion rule with a fixed physical scale rule using `CODE_RENDER_MM_PER_PX = 0.25`
+    - constrained DOCX code blocks to `CODE_RENDER_MAX_DISPLAY_WIDTH_MM = 155.0`, so code images keep a stable physical text size while still fitting the page
+  - Verification:
+    - regenerated chapter-5 code images now fall into a narrow width band such as `608x790`, `610x807`, `619x960`, instead of the previous `463x178` to `1295x705` spread
+    - rebuilt deliverable: `workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v4.docx`
+    - workspace runtime returned to `workflow_signature_status: current`
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/code_image_renderer.py /home/ub/thesis_materials/workflow_bundle/tools/core/build_final_thesis_docx.py /home/ub/thesis_materials/workflow_bundle/tools/core/code_evidence.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v4.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v4.docx`
+
+### Step 182
+- Action: Standardized the code-block frame width in the DOCX so the code boxes themselves are visually aligned, not only the text size inside them.
+- Purpose: Complete the code-style normalization after the user confirmed the next refinement should also make the code frames look consistent across chapter 5.
+- Result:
+  - Updated renderers:
+    - `workflow_bundle/tools/core/code_image_renderer.py`
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+  - Workflow changes:
+    - added `fixed_canvas_width_px` support to the shared code image renderer
+    - enabled a fixed canvas width for DOCX code blocks only, while leaving evidence screenshots flexible
+    - the chapter-5 DOCX code images now all render at a uniform width of `620px`
+  - Verification:
+    - rebuilt deliverable: `workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v5.docx`
+    - regenerated code images show a uniform width set:
+      - `620x1096`, `620x790`, `620x475`, `620x178`, `620x807`
+    - workspace runtime remains `workflow_signature_status: current`
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/code_image_renderer.py /home/ub/thesis_materials/workflow_bundle/tools/core/build_final_thesis_docx.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v5.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v5.docx`
+
+### Step 183
+- Action: Aligned the remaining chapter-5 implementation subsections to the established “后端实现 / 关键代码 / 前端实现 / 关键代码” writing rhythm and tightened several code excerpts.
+- Purpose: Keep the implementation chapter consistent with the reference thesis style after the user pointed out that later subsections had drifted back toward prose-only description or under-specified code evidence.
+- Result:
+  - Updated thesis chapter:
+    - `workspaces/teatrace_thesis/polished_v3/05-系统实现.md`
+  - Chapter refinements:
+    - added a concrete Vue template snippet to `5.5.2` so the trace-code management subsection now shows both page structure and action logic
+    - expanded the `5.5.3` backend excerpt so the public trace-query logic includes query-count updates, anomaly-threshold handling, staged-record aggregation, and the returned result payload
+    - added a concrete transaction-audit page template snippet to `5.6.3` and kept the dashboard parallel-loading code as the second frontend evidence block
+  - Verification:
+    - structural review confirms every functional subsection from `5.2.1` through `5.6.3` contains both `后端实现。` and `前端实现。`
+    - chapter-5 functional subsections now consistently retain embedded code blocks instead of reverting to prose-only descriptions
+  - Validation passed:
+    - `python3 - <<'PY' ...` structural check over `workspaces/teatrace_thesis/polished_v3/05-系统实现.md` for subsection markers and code-block counts
+
+### Step 184
+- Action: Regenerated the Linux delivery DOCX after the latest chapter-5 alignment and reran release verification.
+- Purpose: Produce a fresh thesis deliverable that includes the updated implementation-section wording and embedded code blocks, without overwriting the previous archived release.
+- Result:
+  - Generated deliverable:
+    - `workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v6.docx`
+  - Generated summaries:
+    - `workspaces/teatrace_thesis/word_output/build_runs/build_summary_20260402T010103_0800.json`
+    - `workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260402T010120_0800.json`
+  - Verification:
+    - release verification reported `anchors missing bookmarks: 0`
+    - reference fields and bookmarks remained aligned at `8`
+    - workspace runtime remained `workflow_signature_status: current`
+  - Validation passed:
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py resume --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-preflight --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v6.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v6.docx`
+
+### Step 185
+- Action: Removed the remaining standalone “关键代码截图” subsections from Chapter 5 and locked the workflow contract so Chapter 5 code screenshots must be embedded inside the matching subfunction instead of being emitted as separate subsection nodes.
+- Purpose: Fix the remaining mismatch between the Teatrace implementation chapter and the intended thesis style after the user clarified that code screenshots belong inside backend/frontend implementation flows, not as standalone `5.x.4` subsections.
+- Result:
+  - Updated thesis chapter:
+    - `workspaces/teatrace_thesis/polished_v3/05-系统实现.md`
+  - Updated workflow core:
+    - `workflow_bundle/tools/core/chapter_profile.py`
+    - `workflow_bundle/tools/core/writing.py`
+    - `tools/core/chapter_profile.py`
+    - `tools/core/writing.py`
+  - Updated workflow docs:
+    - `workflow/CHAPTER_EXECUTION.md`
+    - `workflow_bundle/workflow/CHAPTER_EXECUTION.md`
+    - `workflow/06-ai-prompt-guide.md`
+    - `workflow_bundle/workflow/06-ai-prompt-guide.md`
+  - Workflow changes:
+    - removed residual chapter-profile support for generating a standalone `关键代码截图` subsection in Chapter 5 outlines
+    - strengthened the Chapter 5 writing prompt so any code screenshot must appear immediately after the matching backend/frontend code block inside the same subfunction
+    - moved the existing code screenshots in the Teatrace chapter into `5.3.2/5.3.3/5.4.1/5.5.1/5.6.1/5.6.2` and removed the old `5.3.4/5.4.4/5.5.4/5.6.4` blocks
+  - Verification:
+    - no `### 5.[3-6].4` standalone screenshot subsection remains in `workspaces/teatrace_thesis/polished_v3/05-系统实现.md`
+    - Chapter 5 code screenshots are now present only as inline figure inserts inside functional subsections
+  - Validation passed:
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/chapter_profile.py /home/ub/thesis_materials/workflow_bundle/tools/core/writing.py /home/ub/thesis_materials/tools/core/chapter_profile.py /home/ub/thesis_materials/tools/core/writing.py`
+    - `rg -n "^### 5\\.[3-6]\\.4" /home/ub/thesis_materials/workspaces/teatrace_thesis/polished_v3/05-系统实现.md`
+
+### Step 186
+- Action: Regenerated the Linux delivery DOCX after removing the standalone Chapter 5 screenshot subsections and verified the new release artifact.
+- Purpose: Ensure the exported Word document reflects the new inline screenshot layout rather than the previously separate Chapter 5 screenshot blocks.
+- Result:
+  - Generated deliverable:
+    - `workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v7.docx`
+  - Generated summaries:
+    - `workspaces/teatrace_thesis/word_output/build_runs/build_summary_20260402T011220_0800.json`
+    - `workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260402T011243_0800.json`
+  - Workflow runtime:
+    - `sync-workflow-assets` refreshed the workspace signature from `drifted` back to `current`
+  - Verification:
+    - release verification reported `anchors missing bookmarks: 0`
+    - reference fields and bookmarks remained aligned at `8`
+  - Validation passed:
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py resume --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v7.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v7.docx`
+
+### Step 187
+- Action: Removed the extra Chapter 5 `5.1 实现总体说明` node from the Teatrace workspace and from the workflow generation rules, then refreshed the chapter writing artifacts.
+- Purpose: Restore Chapter 5 to the original reference structure after the user correctly pointed out that the source reference chapter does not use a standalone `5.1` implementation-overview subsection.
+- Result:
+  - Updated thesis chapter:
+    - `workspaces/teatrace_thesis/polished_v3/05-系统实现.md`
+  - Updated workflow core:
+    - `workflow_bundle/tools/core/chapter_profile.py`
+    - `workflow_bundle/tools/core/extract.py`
+    - `workflow_bundle/tools/core/writing.py`
+    - `tools/core/chapter_profile.py`
+    - `tools/core/extract.py`
+    - `tools/core/writing.py`
+  - Updated workspace writing artifacts:
+    - `workspaces/teatrace_thesis/docs/writing/project_profile.json`
+    - `workspaces/teatrace_thesis/docs/writing/project_profile.md`
+    - `workspaces/teatrace_thesis/docs/writing/thesis_outline.json`
+    - `workspaces/teatrace_thesis/docs/writing/thesis_outline.md`
+    - `workspaces/teatrace_thesis/docs/writing/chapter_packets/05-系统实现.json`
+    - `workspaces/teatrace_thesis/docs/writing/chapter_packets/05-系统实现.md`
+    - `workspaces/teatrace_thesis/docs/writing/chapter_briefs/05-系统实现.md`
+  - Workflow changes:
+    - removed the generated `5.1 实现总体说明` section node from the Chapter 5 outline tree
+    - remapped figure 5.1 and related chapter-opening assets from the deleted `5.1` subsection to the chapter-level opening of `5 系统实现`
+    - added a project-profile refresh condition so old workspaces containing `5.1 实现总体说明` are rebuilt automatically
+  - Verification:
+    - `workspaces/teatrace_thesis/polished_v3/05-系统实现.md` now goes directly from the chapter-opening paragraphs to `## 5.2 用户与权限管理模块实现`
+    - `chapter_briefs/05-系统实现.md`, `thesis_outline.md`, and `chapter_packets/05-系统实现.md` no longer contain `5.1 实现总体说明`
+  - Validation passed:
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py extract --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-outline --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-writing --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-chapter --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --chapter 05-系统实现.md`
+
+### Step 188
+- Action: Regenerated the Linux delivery DOCX after removing the extra Chapter 5 `5.1` subsection and verified the new release artifact.
+- Purpose: Ensure the exported document matches the restored original-style Chapter 5 structure instead of the workflow-added variant.
+- Result:
+  - Generated deliverable:
+    - `workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v8.docx`
+  - Generated summaries:
+    - `workspaces/teatrace_thesis/word_output/build_runs/build_summary_20260402T012614_0800.json`
+    - `workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260402T012630_0800.json`
+  - Verification:
+    - release verification reported `anchors missing bookmarks: 0`
+    - reference fields and bookmarks remained aligned at `8`
+    - workspace runtime remained `workflow_signature_status: current`
+  - Validation passed:
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py resume --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v8.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v8.docx`
+
+### Step 189
+- Action: Updated the Chapter 5 screenshot-writing rules and DOCX exporter so code screenshots remain inline but no longer generate numbered figure captions, then refreshed the Chapter 5 packet.
+- Purpose: Align the workflow with the original sample style after confirming that Chapter 5 code screenshots should be retained as implementation evidence but must not appear as `图5.x` captioned figures.
+- Result:
+  - Updated workflow core:
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+    - `workflow_bundle/tools/core/writing.py`
+    - `tools/core/build_final_thesis_docx.py`
+    - `tools/core/writing.py`
+  - Updated thesis chapter:
+    - `workspaces/teatrace_thesis/polished_v3/05-系统实现.md`
+  - Updated workspace writing artifacts:
+    - `workspaces/teatrace_thesis/docs/writing/chapter_packets/05-系统实现.json`
+    - `workspaces/teatrace_thesis/docs/writing/chapter_packets/05-系统实现.md`
+    - `workspaces/teatrace_thesis/docs/writing/chapter_briefs/05-系统实现.md`
+  - Workflow changes:
+    - markdown images under `docs/materials/code_screenshots` are now treated as inline code-evidence images without figure-caption paragraphs in DOCX
+    - Chapter 5 prompt rules now explicitly require code screenshots to stay unnumbered and captionless
+    - Teatrace Chapter 5正文 no longer uses wording such as `如图5.5所示` for code screenshots
+  - Verification:
+    - `chapter_packets/05-系统实现.md` now contains the rule `do not assign figure numbers, 图5.x captions, or separate caption paragraphs to them`
+    - `chapter_briefs/05-系统实现.md` now contains the rule `代码截图仅作为实现证据插图使用，不编号，不写“图5.x”题注`
+    - `workspaces/teatrace_thesis/polished_v3/05-系统实现.md` retains the inline screenshots but removes the old `图5.5` to `图5.12` references
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/build_final_thesis_docx.py /home/ub/thesis_materials/workflow_bundle/tools/core/writing.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-chapter --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --chapter 05-系统实现.md`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 190
+- Action: Regenerated and verified the Linux delivery DOCX after the code-screenshot caption fix, then directly inspected the generated DOCX XML.
+- Purpose: Confirm that the Chapter 5 code screenshots are still present in the document but no longer emit any visible caption paragraphs such as `图5.5` to `图5.12`.
+- Result:
+  - Generated deliverable:
+    - `workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v9.docx`
+  - Generated summaries:
+    - `workspaces/teatrace_thesis/word_output/build_runs/build_summary_20260402T013440_0800.json`
+    - `workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260402T013458_0800.json`
+  - Verification:
+    - release verification reported `anchors missing bookmarks: 0`
+    - reference fields and bookmarks remained aligned at `8`
+    - direct `document.xml` inspection confirmed that:
+      - `图5.5 批次创建关键代码截图`
+      - `图5.6 批次管理页面关键代码截图`
+      - `图5.7 农事记录创建关键代码截图`
+      - `图5.8 农事记录页面关键代码截图`
+      - `图5.9 溯源码绑定关键代码截图`
+      - `图5.10 二维码展示关键代码截图`
+      - `图5.11 预警页面关键代码截图`
+      - `图5.12 批次解冻关键代码截图`
+      no longer exist in the generated Word body
+    - direct `document.xml` inspection also confirmed that `关键代码截图` does not remain as any standalone caption paragraph text
+    - normal numbered figures such as `图5.1 系统功能结构图` remain intact
+  - Validation passed:
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v9.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v9.docx`

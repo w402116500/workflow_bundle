@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,8 +14,10 @@ from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Inches, Mm, Pt, RGBColor
-from PIL import Image, ImageDraw, ImageFont
+from docx.shared import Mm, Pt, RGBColor
+from PIL import Image
+
+from core.code_image_renderer import build_bundled_font_candidates, render_code_lines_image
 
 WORKSPACE_DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = None
@@ -51,6 +54,40 @@ DEFAULT_CHAPTER_ORDER = [
 ]
 DEFAULT_KEYWORDS_CN = "FISCO BCOS；区块链；健康档案；访问控制；存证审计"
 DEFAULT_KEYWORDS_EN = "FISCO BCOS; blockchain; health record; access control; notarization and audit"
+CODE_RENDER_FONT_ENV_VAR = "THESIS_CODE_SCREENSHOT_FONT"
+CODE_RENDER_FONT_SIZE_PX = 14
+CODE_RENDER_BORDER_PX = 1
+CODE_RENDER_IMAGE_PAD_X_PX = 16
+CODE_RENDER_IMAGE_PAD_Y_PX = 12
+CODE_RENDER_LINE_PAD_PX = 1
+CODE_RENDER_PARAGRAPH_LEFT_INDENT_PT = 10
+CODE_RENDER_MM_PER_PX = 0.25
+CODE_RENDER_MAX_DISPLAY_WIDTH_MM = 155.0
+CODE_RENDER_MAX_CONTENT_WIDTH_PX = max(
+    240,
+    int(round(CODE_RENDER_MAX_DISPLAY_WIDTH_MM / CODE_RENDER_MM_PER_PX))
+    - (CODE_RENDER_IMAGE_PAD_X_PX * 2)
+    - (CODE_RENDER_BORDER_PX * 2),
+)
+CODE_RENDER_FIXED_CANVAS_WIDTH_PX = CODE_RENDER_MAX_CONTENT_WIDTH_PX
+CODE_RENDER_BUNDLED_FONT_RELATIVE_PATHS = [
+    Path("assets/fonts/siyuan-heiti/SourceHanSansSC-Regular-2.otf"),
+    Path("assets/fonts/sarasa-mono-sc/SarasaMonoSC-Regular.ttf"),
+]
+CODE_RENDER_FONT_PATH_CANDIDATES = [
+    Path("C:/Windows/Fonts/consola.ttf"),
+    Path("C:/Windows/Fonts/consolab.ttf"),
+    Path("C:/Windows/Fonts/Consolas.ttf"),
+    Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+    Path("/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf"),
+    Path("/usr/share/fonts/truetype/noto/NotoMono-Regular.ttf"),
+    Path("C:/Windows/Fonts/msyh.ttc"),
+    Path("C:/Windows/Fonts/msyhbd.ttc"),
+    Path("C:/Windows/Fonts/Deng.ttf"),
+    Path("C:/Windows/Fonts/simsun.ttc"),
+    Path("C:/Windows/Fonts/simsunb.ttf"),
+    Path("C:/Windows/Fonts/Arial.ttf"),
+]
 
 
 def _resolve_default_config_path(config_path: Path | None = None) -> Path:
@@ -85,6 +122,7 @@ class FigureItem:
     caption: str
     source_path: Path
     processed_path: Path
+    show_caption: bool = True
     inserted_page: int | None = None
 
 
@@ -424,56 +462,25 @@ def _add_section_break(doc: Document):
     doc.add_section(WD_SECTION_START.NEW_PAGE)
 
 
-def _render_code_image(code_lines: list[str], output_path: Path, font_size: int = 14) -> Path:
-    font_candidates = [
-        Path("C:/Windows/Fonts/msyh.ttc"),
-        Path("C:/Windows/Fonts/msyhbd.ttc"),
-        Path("C:/Windows/Fonts/Deng.ttf"),
-        Path("C:/Windows/Fonts/simsun.ttc"),
-        Path("C:/Windows/Fonts/simsunb.ttf"),
-        Path("C:/Windows/Fonts/consola.ttf"),
-        Path("C:/Windows/Fonts/consolab.ttf"),
-        Path("C:/Windows/Fonts/Consolas.ttf"),
-        Path("C:/Windows/Fonts/Arial.ttf"),
-    ]
-    font = None
-    for fp in font_candidates:
-        if fp.exists():
-            font = ImageFont.truetype(str(fp), font_size)
-            break
-    if font is None:
-        font = ImageFont.load_default()
-
-    # Normalize empty lines to keep consistent height
-    safe_lines = [ln if ln.strip() != "" else " " for ln in code_lines]
-
-    dummy = Image.new("RGB", (10, 10), "white")
-    draw = ImageDraw.Draw(dummy)
-    line_heights = []
-    max_width = 0
-    for ln in safe_lines:
-        bbox = draw.textbbox((0, 0), ln, font=font)
-        width = bbox[2] - bbox[0]
-        height = bbox[3] - bbox[1]
-        max_width = max(max_width, width)
-        line_heights.append(height)
-
-    line_height = max(line_heights) if line_heights else font_size
-    leading = max(4, int(line_height * 0.25))
-    padding_x = 18
-    padding_y = 14
-    img_w = max_width + padding_x * 2
-    img_h = (line_height + leading) * len(safe_lines) - leading + padding_y * 2
-    img = Image.new("RGB", (img_w, img_h), "white")
-    draw = ImageDraw.Draw(img)
-
-    y = padding_y
-    for ln in safe_lines:
-        draw.text((padding_x, y), ln, fill=(0, 0, 0), font=font)
-        y += line_height + leading
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    img.save(output_path, format="PNG")
+def _render_code_image(code_lines: list[str], output_path: Path, font_size: int = CODE_RENDER_FONT_SIZE_PX) -> Path:
+    font_candidates: list[Path] = []
+    custom_font = os.environ.get(CODE_RENDER_FONT_ENV_VAR, "").strip()
+    if custom_font:
+        font_candidates.append(Path(custom_font))
+    font_candidates.extend(build_bundled_font_candidates(Path(__file__), CODE_RENDER_BUNDLED_FONT_RELATIVE_PATHS))
+    font_candidates.extend(CODE_RENDER_FONT_PATH_CANDIDATES)
+    render_code_lines_image(
+        code_lines,
+        output_path,
+        font_candidates=font_candidates,
+        font_size=font_size,
+        padding_x=CODE_RENDER_IMAGE_PAD_X_PX,
+        padding_y=CODE_RENDER_IMAGE_PAD_Y_PX,
+        line_pad=CODE_RENDER_LINE_PAD_PX,
+        border_px=CODE_RENDER_BORDER_PX,
+        max_content_width_px=CODE_RENDER_MAX_CONTENT_WIDTH_PX,
+        fixed_canvas_width_px=CODE_RENDER_FIXED_CANVAS_WIDTH_PX,
+    )
     return output_path
 
 
@@ -864,6 +871,12 @@ def _normalize_markdown_image_line(line: str) -> str:
     return normalized
 
 
+def _is_code_screenshot_image(src: Path, alt: str) -> bool:
+    path_parts = {part.lower() for part in src.parts}
+    alt_text = alt.strip()
+    return "code_screenshots" in path_parts or "代码截图" in alt_text
+
+
 def _add_image_with_caption(doc: Document, fig: FigureItem):
     section = doc.sections[0]
     avail_width_mm = float((section.page_width - section.left_margin - section.right_margin) / Mm(1))
@@ -886,17 +899,18 @@ def _add_image_with_caption(doc: Document, fig: FigureItem):
     p_img.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
     p_img.paragraph_format.line_spacing = 1.0
     p_img.paragraph_format.keep_together = True
-    p_img.paragraph_format.keep_with_next = True
+    p_img.paragraph_format.keep_with_next = fig.show_caption
     p_img.paragraph_format.space_before = Pt(12)
-    p_img.paragraph_format.space_after = Pt(12)
+    p_img.paragraph_format.space_after = Pt(0 if fig.show_caption else 12)
     run = p_img.add_run()
     run.add_picture(str(fig.processed_path), width=Mm(width_mm), height=Mm(height_mm))
 
-    p_cap = doc.add_paragraph(fig.caption, style="FigureCaption")
-    p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p_cap.paragraph_format.keep_together = True
-    p_cap.paragraph_format.space_before = Pt(0)
-    p_cap.paragraph_format.space_after = Pt(0)
+    if fig.show_caption and fig.caption.strip():
+        p_cap = doc.add_paragraph(fig.caption, style="FigureCaption")
+        p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_cap.paragraph_format.keep_together = True
+        p_cap.paragraph_format.space_before = Pt(0)
+        p_cap.paragraph_format.space_after = Pt(0)
 
 
 def _add_table(doc: Document, caption: str | None, headers: list[str], rows: list[list[str]]):
@@ -998,8 +1012,18 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
                 _render_code_image(code_lines, img_path)
                 p = doc.add_paragraph()
                 _apply_body_paragraph_format(p, indent=False)
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                p.paragraph_format.left_indent = Pt(CODE_RENDER_PARAGRAPH_LEFT_INDENT_PT)
                 run = p.add_run()
-                run.add_picture(str(img_path), width=Inches(6.0))
+                with Image.open(img_path) as code_image:
+                    width_px, height_px = code_image.size
+                width_mm = width_px * CODE_RENDER_MM_PER_PX
+                height_mm = height_px * CODE_RENDER_MM_PER_PX
+                if width_mm > CODE_RENDER_MAX_DISPLAY_WIDTH_MM:
+                    scale = CODE_RENDER_MAX_DISPLAY_WIDTH_MM / width_mm
+                    width_mm = CODE_RENDER_MAX_DISPLAY_WIDTH_MM
+                    height_mm *= scale
+                run.add_picture(str(img_path), width=Mm(width_mm), height=Mm(height_mm))
             continue
 
         m_h = HEADING_RE.match(line)
@@ -1079,7 +1103,8 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
             src = _resolve_markdown_image_source(md_path, rel)
             processed = _process_image(src)
             cap = alt if FIG_CAPTION_RE.match(alt) else alt
-            fig = FigureItem(caption=cap, source_path=src, processed_path=processed)
+            show_caption = not _is_code_screenshot_image(src, alt)
+            fig = FigureItem(caption=cap, source_path=src, processed_path=processed, show_caption=show_caption)
             _add_image_with_caption(doc, fig)
             figures.append(fig)
             i += 1

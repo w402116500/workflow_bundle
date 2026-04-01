@@ -94,7 +94,7 @@ def _chapter5_screenshot_module_order(modules: list[dict[str, Any]]) -> list[int
 def _chapter5_screenshot_requirements(modules: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not modules:
         return [
-            _asset_requirement("figures", "test-screenshot", "实现章节至少插入 2 张页面截图", min_count=2, section="5.1 实现总体说明")
+            _asset_requirement("figures", "test-screenshot", "实现章节至少插入 2 张页面截图", min_count=2, section="5 系统实现")
         ]
 
     ordered_modules = _chapter5_screenshot_module_order(modules)
@@ -238,9 +238,9 @@ def _detect_modules(domain_key: str, manifest: dict[str, Any], material_pack: di
                 "patterns": ["user", "auth", "login", "register", "permission", "权限", "审核", "机构"],
                 "sections": ["roles_permissions", "api_interfaces"],
                 "subfunctions": [
-                    {"label": "注册登录与会话建立实现", "keywords": ["register", "login", "auth", "session", "loginpage"]},
-                    {"label": "机构审核与链上身份绑定实现", "keywords": ["auditorg", "org", "msp", "identity", "bindchain", "organization"]},
-                    {"label": "用户管理与权限治理实现", "keywords": ["users", "role", "permission", "user", "loaddata"]},
+                    {"label": "注册登录与会话建立实现", "keywords": ["register", "login", "auth", "session", "loginpage", "registerpage", "handlesubmit"]},
+                    {"label": "机构审核与链上身份绑定实现", "keywords": ["auditorg", "pendingorg", "org", "msp", "identity", "bindchain", "bindchainidentity", "organization", "openaudit", "submit"]},
+                    {"label": "用户管理与权限治理实现", "keywords": ["users", "userspage", "role", "permission", "user", "loaddata", "updateuserrole", "openidentity"]},
                 ],
             },
             {
@@ -360,11 +360,14 @@ def _implementation_children(prefix: str, material_sections: list[str]) -> list[
     return [
         _node(f"{prefix}.1 后端实现", material_sections),
         _node(f"{prefix}.2 前端实现", material_sections),
-        _node(f"{prefix}.3 关键代码截图", material_sections),
     ]
 
 
-def _module_implementation_children(prefix: str, module: dict[str, Any]) -> list[dict[str, Any]]:
+def _module_implementation_children(
+    prefix: str,
+    module: dict[str, Any],
+    include_code_screenshot_section: bool = False,
+) -> list[dict[str, Any]]:
     subfunctions = module.get("subfunctions", [])
     if not subfunctions:
         return _implementation_children(prefix, module["sections"])
@@ -374,7 +377,6 @@ def _module_implementation_children(prefix: str, module: dict[str, Any]) -> list
         label = subfunction["label"] if isinstance(subfunction, dict) else str(subfunction)
         material_sections = subfunction.get("sections", module["sections"]) if isinstance(subfunction, dict) else module["sections"]
         children.append(_node(f"{prefix}.{idx} {label}", material_sections))
-    children.append(_node(f"{prefix}.{len(subfunctions) + 1} 关键代码截图", module["sections"]))
     return children
 
 
@@ -459,7 +461,7 @@ def _base_required_assets(domain_key: str) -> dict[str, list[dict[str, Any]]]:
             *design_tables,
         ],
         "05-系统实现.md": [
-            _asset_requirement("figures", "system-function-structure", "图5.1 系统功能结构图", section="5.1 实现总体说明"),
+            _asset_requirement("figures", "system-function-structure", "图5.1 系统功能结构图", section="5 系统实现"),
         ],
         "06-系统测试.md": [
             _asset_requirement("tables", "server-hardware-config", "表6.1 服务器端硬件配置表", section="6.1.1 服务器端"),
@@ -504,7 +506,7 @@ def _chapter_profile_for(
     required_assets = _base_required_assets(domain["key"])
     preferred_assets = _preferred_assets()
     required_assets["05-系统实现.md"] = [
-        _asset_requirement("figures", "system-function-structure", "图5.1 系统功能结构图", section="5.1 实现总体说明"),
+        _asset_requirement("figures", "system-function-structure", "图5.1 系统功能结构图", section="5 系统实现"),
         *_chapter5_screenshot_requirements(modules),
     ]
 
@@ -548,13 +550,33 @@ def _chapter_profile_for(
             entry["module_implementation_policy"] = module_implementation_policy
         return entry
 
+    chapter5_module_policy = {
+        "structure_mode": "module-subfunctions-with-inline-code",
+        "require_subfunction_sections": True,
+        "require_code_screenshot_section": False,
+        "integrate_backend_and_frontend_in_subfunctions": True,
+        "require_backend_frontend_paragraphs_in_subfunctions": True,
+        "subfunction_implementation_paragraph_order": ["backend", "frontend"],
+        "subfunction_implementation_leadins": ["后端实现。", "前端实现。"],
+        "require_inline_code_blocks_in_subfunctions": True,
+        "prefer_page_screenshots_in_frontend_subfunctions": True,
+        "min_subfunctions_per_module": 2,
+        "min_backend_entries_per_module": 1,
+        "min_frontend_entries_per_module": 1,
+        "preferred_backend_entries_per_module": 4,
+        "preferred_frontend_entries_per_module": 4,
+        "min_code_screenshots_per_module": 0,
+    }
+
     chapter5_sections = [
-        _node("5.1 实现总体说明", ["architecture", "business_flows"]),
         *[
             _node(
                 f"5.{idx + 2} {label}模块实现",
                 module["sections"],
-                _module_implementation_children(f"5.{idx + 2}", module),
+                _module_implementation_children(
+                    f"5.{idx + 2}",
+                    module,
+                ),
             )
             for idx, (label, module) in enumerate(zip(module_labels, modules))
         ],
@@ -620,21 +642,7 @@ def _chapter_profile_for(
             chapter5_sections,
             ["api_interfaces", "database_design", "blockchain_design", "business_flows", "demo_test_evidence"],
             "05-系统实现.md",
-            module_implementation_policy={
-                "structure_mode": "module-subfunctions-with-code-screenshots",
-                "require_subfunction_sections": True,
-                "require_code_screenshot_section": True,
-                "integrate_backend_and_frontend_in_subfunctions": True,
-                "require_backend_frontend_paragraphs_in_subfunctions": True,
-                "subfunction_implementation_paragraph_order": ["backend", "frontend"],
-                "subfunction_implementation_leadins": ["后端实现。", "前端实现。"],
-                "min_subfunctions_per_module": 2,
-                "min_backend_entries_per_module": 1,
-                "min_frontend_entries_per_module": 1,
-                "preferred_backend_entries_per_module": 2,
-                "preferred_frontend_entries_per_module": 2,
-                "min_code_screenshots_per_module": 2,
-            },
+            module_implementation_policy=chapter5_module_policy,
         ),
         "06-系统测试.md": _chapter_entry(
             "6 系统测试",

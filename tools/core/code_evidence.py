@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pygments import highlight
-from pygments.formatters import ImageFormatter
-from pygments.lexers import get_lexer_for_filename
-from pygments.lexers.special import TextLexer
+from core.code_image_renderer import build_bundled_font_candidates, render_code_lines_image
 
 from core.project_common import (
     CODE_EVIDENCE_SCHEMA_VERSION,
@@ -20,7 +18,23 @@ from core.project_common import (
     write_text,
 )
 
-
+CODE_SCREENSHOT_FONT_ENV_VAR = "THESIS_CODE_SCREENSHOT_FONT"
+CODE_SCREENSHOT_BUNDLED_FONT_RELATIVE_PATHS = [
+    Path("assets/fonts/siyuan-heiti/SourceHanSansSC-Regular-2.otf"),
+    Path("assets/fonts/sarasa-mono-sc/SarasaMonoSC-Regular.ttf"),
+]
+CODE_SCREENSHOT_PRIMARY_FONT_PATHS = [
+    Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+    Path("/usr/share/fonts/truetype/noto/NotoSansMono-Regular.ttf"),
+    Path("/usr/share/fonts/truetype/noto/NotoMono-Regular.ttf"),
+    Path("C:/Windows/Fonts/consola.ttf"),
+    Path("C:/Windows/Fonts/consolab.ttf"),
+    Path("C:/Windows/Fonts/Consolas.ttf"),
+]
+CODE_SCREENSHOT_FONT_SIZE_PX = 16
+CODE_SCREENSHOT_IMAGE_PAD_PX = 16
+CODE_SCREENSHOT_LINE_PAD_PX = 2
+CODE_SCREENSHOT_BORDER_PX = 1
 def _now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
@@ -34,6 +48,24 @@ def _abs_project_path(project_root: Path, raw_path: str | None) -> Path | None:
         return None
     path = Path(raw_path)
     return path if path.is_absolute() else (project_root / path).resolve()
+
+
+def _code_screenshot_font_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    custom_font = os.environ.get(CODE_SCREENSHOT_FONT_ENV_VAR, "").strip()
+    if custom_font:
+        candidates.append(Path(custom_font))
+    candidates.extend(build_bundled_font_candidates(Path(__file__), CODE_SCREENSHOT_BUNDLED_FONT_RELATIVE_PATHS))
+    candidates.extend(path for path in CODE_SCREENSHOT_PRIMARY_FONT_PATHS if path.exists())
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate.resolve())
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
 
 
 def _detect_domain_key(title: str) -> str:
@@ -98,10 +130,10 @@ def _module_specs(domain_key: str) -> list[dict[str, Any]]:
             {
                 "key": "identity",
                 "label": "用户与权限管理",
-                "backend_keywords": ["auth", "login", "register", "user", "org", "jwt", "role", "audit"],
-                "frontend_keywords": ["login", "register", "profile", "auth", "user", "pendingorg", "users"],
-                "backend_preferred_paths": ["auth_service.go", "admin_service.go", "router.go", "middleware", "permission"],
-                "frontend_preferred_paths": ["router/index.ts", "loginpage.vue", "pendingorgspage.vue", "userspage.vue"],
+                "backend_keywords": ["auth", "login", "register", "user", "org", "jwt", "role", "audit", "bind", "identity", "list", "update"],
+                "frontend_keywords": ["login", "register", "profile", "auth", "user", "pendingorg", "users", "audit", "submit"],
+                "backend_preferred_paths": ["auth_service.go", "admin_service.go", "admin_extra_service.go", "router.go", "middleware", "permission"],
+                "frontend_preferred_paths": ["registerpage.vue", "loginpage.vue", "pendingorgspage.vue", "userspage.vue", "router/index.ts"],
             },
             {
                 "key": "batch",
@@ -267,6 +299,8 @@ def _generic_penalty(path_lower: str, side: str) -> int:
             penalties += 56
         if "retry" in path_lower:
             penalties += 24
+        if path_lower.endswith("router.go"):
+            penalties += 20
         if any(token in path_lower for token in ["helper", "dto", "errors", "support"]):
             penalties += 18
         if "config_service" in path_lower:
@@ -324,6 +358,20 @@ def _script_range(lines: list[str]) -> tuple[int, int] | None:
         return None
     for idx in range(start + 1, len(lines)):
         if "</script>" in lines[idx]:
+            return start, idx
+    return None
+
+
+def _template_range(lines: list[str]) -> tuple[int, int] | None:
+    start = None
+    for idx, line in enumerate(lines):
+        if "<template" in line:
+            start = idx
+            break
+    if start is None:
+        return None
+    for idx in range(start + 1, len(lines)):
+        if "</template>" in lines[idx]:
             return start, idx
     return None
 
@@ -392,6 +440,95 @@ def _snippet_bounds(lines: list[str], allowed_start: int, allowed_end: int, anch
     return start, end
 
 
+def _template_snippet_bounds(lines: list[str], allowed_start: int, allowed_end: int, anchor: int) -> tuple[int, int]:
+    start = max(allowed_start, anchor - 4)
+    end = min(allowed_end, anchor + 14)
+    while start < end and not lines[start].strip():
+        start += 1
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    return start, end
+
+
+def _candidate_score(symbol: str, snippet: str, keywords: list[str]) -> int:
+    symbol_lower = symbol.lower()
+    snippet_lower = snippet.lower()
+    score = 0
+    for keyword in keywords:
+        keyword_lower = keyword.lower()
+        if keyword_lower in symbol_lower:
+            score += 5
+        score += min(snippet_lower.count(keyword_lower), 3)
+    for token in ["login", "register", "audit", "bind", "list", "update", "query", "submit", "load", "create"]:
+        if token in symbol_lower:
+            score += 2
+    return score
+
+
+def _extract_snippet_candidates(path: Path, keywords: list[str], side: str, max_candidates: int = 2) -> list[dict[str, Any]]:
+    text = read_text_safe(path)
+    lines = text.splitlines()
+    if not lines:
+        return []
+
+    candidates: list[dict[str, Any]] = []
+    seen_keys: set[tuple[str, int, int]] = set()
+
+    def _append_candidate(start: int, end: int, symbol: str) -> None:
+        snippet = "\n".join(lines[start:end]).strip()
+        if not snippet:
+            return
+        key = (symbol, start, end)
+        if key in seen_keys:
+            return
+        seen_keys.add(key)
+        candidates.append(
+            {
+                "symbol": symbol,
+                "language": _language_for_path(path),
+                "snippet": snippet + "\n",
+                "line_start": start + 1,
+                "line_end": end,
+                "score": _candidate_score(symbol, snippet, keywords),
+            }
+        )
+
+    allowed_start = 0
+    allowed_end = len(lines)
+    if path.suffix.lower() == ".vue" and side == "frontend":
+        script = _script_range(lines)
+        if script:
+            allowed_start = script[0] + 1
+            allowed_end = script[1]
+
+    for idx in range(allowed_start, allowed_end):
+        clean = lines[idx].strip()
+        if not _function_like(clean):
+            continue
+        start, end = _snippet_bounds(lines, allowed_start, allowed_end, idx)
+        _append_candidate(start, end, _extract_symbol(lines[start].strip(), path))
+
+    if path.suffix.lower() == ".vue" and side == "frontend":
+        template = _template_range(lines)
+        if template:
+            tpl_start = template[0] + 1
+            tpl_end = template[1]
+            template_markers = ["<a-form", "<a-table", "<a-modal", "<PageIntro", "<router-link", "class=\"toolbar\"", "class='toolbar'"]
+            for idx in range(tpl_start, tpl_end):
+                clean = lines[idx].strip()
+                if not clean or not any(marker in clean for marker in template_markers):
+                    continue
+                start, end = _template_snippet_bounds(lines, tpl_start, tpl_end, idx)
+                _append_candidate(start, end, f"{path.stem}-template")
+
+    if not candidates:
+        fallback = _extract_snippet(path, keywords, side)
+        return [fallback] if fallback else []
+
+    candidates.sort(key=lambda item: (-item["score"], item["line_start"], item["symbol"]))
+    return candidates[:max_candidates]
+
+
 def _extract_snippet(path: Path, keywords: list[str], side: str) -> dict[str, Any] | None:
     text = read_text_safe(path)
     lines = text.splitlines()
@@ -448,25 +585,18 @@ def _snippet_filename(entry_id: str, path: Path) -> str:
     return f"{entry_id}.snippet.{suffix}"
 
 
-def _render_code_screenshot(snippet: str, source_path: Path, output_path: Path) -> None:
-    try:
-        lexer = get_lexer_for_filename(source_path.name, stripall=False)
-    except Exception:
-        lexer = TextLexer(stripall=False)
-    formatter = ImageFormatter(
-        image_format="PNG",
-        line_numbers=False,
-        style="bw",
-        font_name="DejaVu Sans Mono",
-        font_size=16,
-        image_pad=16,
-        line_pad=4,
-        line_number_bg="#ffffff",
-        line_number_fg="#000000",
+def _render_code_screenshot(snippet: str, source_path: Path, output_path: Path) -> str | None:
+    _ = source_path
+    return render_code_lines_image(
+        snippet.splitlines(),
+        output_path,
+        font_candidates=_code_screenshot_font_candidates(),
+        font_size=CODE_SCREENSHOT_FONT_SIZE_PX,
+        padding_x=CODE_SCREENSHOT_IMAGE_PAD_PX,
+        padding_y=CODE_SCREENSHOT_IMAGE_PAD_PX,
+        line_pad=CODE_SCREENSHOT_LINE_PAD_PX,
+        border_px=CODE_SCREENSHOT_BORDER_PX,
     )
-    payload = highlight(snippet, lexer, formatter)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(payload)
 
 
 def _render_pack_md(pack: dict[str, Any]) -> str:
@@ -476,6 +606,7 @@ def _render_pack_md(pack: dict[str, Any]) -> str:
         f"- schema_version: {pack['metadata']['schema_version']}",
         f"- generated_at: {pack['metadata']['generated_at']}",
         f"- title: {pack['metadata']['title']}",
+        f"- code_screenshot_font: {pack['metadata'].get('code_screenshot_font', 'default')}",
         f"- total_entries: {len(pack['entries'])}",
         "",
     ]
@@ -520,50 +651,61 @@ def build_code_evidence_pack(ctx: dict[str, Any], output_paths: dict[str, Path] 
     module_specs = _module_specs(domain_key)
     entries: list[dict[str, Any]] = []
     module_summary: list[dict[str, Any]] = []
+    selected_code_screenshot_font: str | None = None
 
     for module_index, spec in enumerate(module_specs, start=1):
-        backend_selected = _select_files(backend_files, spec, "backend")
-        frontend_selected = _select_files(frontend_files, spec, "frontend")
+        backend_selected = _select_files(backend_files, spec, "backend", limit=int(spec.get("backend_file_limit", 4) or 4))
+        frontend_selected = _select_files(frontend_files, spec, "frontend", limit=int(spec.get("frontend_file_limit", 4) or 4))
         module_summary.append(
             {
                 "key": spec["key"],
                 "label": spec["label"],
-                "backend_count": len(backend_selected),
-                "frontend_count": len(frontend_selected),
+                "backend_count": 0,
+                "frontend_count": 0,
             }
         )
+        side_entry_counts = {"backend": 0, "frontend": 0}
         for side, selected_files in [("backend", backend_selected), ("frontend", frontend_selected)]:
             keywords = spec["backend_keywords"] if side == "backend" else spec["frontend_keywords"]
             for idx, path in enumerate(selected_files, start=1):
-                snippet_info = _extract_snippet(path, keywords, side)
-                if snippet_info is None:
-                    continue
-                entry_id = f"{module_index:02d}-{spec['key']}-{side}-{idx:02d}-{_slug(snippet_info['symbol'])}"
-                snippet_filename = _snippet_filename(entry_id, path)
-                screenshot_filename = f"{entry_id}.png"
-                snippet_path = output_paths["code_snippets_dir"] / snippet_filename
-                screenshot_path = output_paths["code_screenshots_dir"] / screenshot_filename
-                write_text(snippet_path, snippet_info["snippet"])
-                _render_code_screenshot(snippet_info["snippet"], path, screenshot_path)
-                entries.append(
-                    {
-                        "id": entry_id,
-                        "module_key": spec["key"],
-                        "module_label": spec["label"],
-                        "side": side,
-                        "language": snippet_info["language"],
-                        "source_path": make_relative(path, project_root),
-                        "symbol": snippet_info["symbol"],
-                        "line_start": snippet_info["line_start"],
-                        "line_end": snippet_info["line_end"],
-                        "snippet_path": make_relative(snippet_path, workspace_root),
-                        "screenshot_path": make_relative(screenshot_path, workspace_root),
-                        "caption": f"{spec['label']}模块{('后端' if side == 'backend' else '前端')}关键实现代码截图",
-                        "selected_reason": f"根据模块关键词 {', '.join(keywords[:4])} 从真实源码中摘录。",
-                        "chapter_candidates": ["05-系统实现.md"],
-                        "section_candidates": [spec["label"]],
-                    }
+                snippet_candidates = _extract_snippet_candidates(
+                    path,
+                    keywords,
+                    side,
+                    max_candidates=int(spec.get(f"{side}_snippets_per_file", 2) or 2),
                 )
+                for snippet_info in snippet_candidates:
+                    side_entry_counts[side] += 1
+                    entry_id = f"{module_index:02d}-{spec['key']}-{side}-{side_entry_counts[side]:02d}-{_slug(snippet_info['symbol'])}"
+                    snippet_filename = _snippet_filename(entry_id, path)
+                    screenshot_filename = f"{entry_id}.png"
+                    snippet_path = output_paths["code_snippets_dir"] / snippet_filename
+                    screenshot_path = output_paths["code_screenshots_dir"] / screenshot_filename
+                    write_text(snippet_path, snippet_info["snippet"])
+                    used_font = _render_code_screenshot(snippet_info["snippet"], path, screenshot_path)
+                    if selected_code_screenshot_font is None and used_font:
+                        selected_code_screenshot_font = used_font
+                    entries.append(
+                        {
+                            "id": entry_id,
+                            "module_key": spec["key"],
+                            "module_label": spec["label"],
+                            "side": side,
+                            "language": snippet_info["language"],
+                            "source_path": make_relative(path, project_root),
+                            "symbol": snippet_info["symbol"],
+                            "line_start": snippet_info["line_start"],
+                            "line_end": snippet_info["line_end"],
+                            "snippet_path": make_relative(snippet_path, workspace_root),
+                            "screenshot_path": make_relative(screenshot_path, workspace_root),
+                            "caption": f"{spec['label']}模块{('后端' if side == 'backend' else '前端')}关键实现代码截图",
+                            "selected_reason": f"根据模块关键词 {', '.join(keywords[:4])} 从真实源码中摘录。",
+                            "chapter_candidates": ["05-系统实现.md"],
+                            "section_candidates": [spec["label"]],
+                        }
+                    )
+        module_summary[-1]["backend_count"] = side_entry_counts["backend"]
+        module_summary[-1]["frontend_count"] = side_entry_counts["frontend"]
 
     pack = {
         "metadata": {
@@ -572,6 +714,7 @@ def build_code_evidence_pack(ctx: dict[str, Any], output_paths: dict[str, Path] 
             "title": manifest["title"],
             "project_root": str(project_root),
             "domain_key": domain_key,
+            "code_screenshot_font": selected_code_screenshot_font or "default",
         },
         "modules": module_summary,
         "entries": entries,
