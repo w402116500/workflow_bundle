@@ -3267,3 +3267,43 @@
     - the heading style color nodes no longer carry theme-color attributes
   - Refreshed workspace-local workflow assets after the bundle signature changed:
     - `python3 workflow_bundle/tools/cli.py sync-workflow-assets --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 171
+- Action: Tightened the Chapter 5 implementation-writing workflow to require explicit backend/frontend paragraphs in every subfunction, and rewrote the Teatrace Chapter 5 polished text to match the original sample style.
+- Purpose: Resolve the remaining Chapter 5 style gap where module subfunctions were still written as mixed implementation prose instead of the expected “后端实现。/前端实现。” pattern used by the original optimized workflow.
+- Result:
+  - Updated workflow rules:
+    - `workflow_bundle/tools/core/chapter_profile.py`
+    - `workflow_bundle/tools/core/writing.py`
+  - Updated live workspace chapter:
+    - `workspaces/teatrace_thesis/polished_v3/05-系统实现.md`
+  - Workflow changes:
+    - added explicit Chapter 5 module policy fields requiring backend/frontend implementation paragraphs inside each subfunction
+    - updated Chapter 5 packet prompt lines so every subfunction must use:
+      - `后端实现。`
+      - `前端实现。`
+      in that fixed order
+    - refined the Chinese chapter-writing rules so backend paragraphs focus on interfaces, services, database persistence, and chain interaction, while frontend paragraphs focus on page entry, form/list interaction, state feedback, and route flow
+  - Chapter 5正文 changes:
+    - rewrote all Teatrace Chapter 5 subfunction sections from `5.2.1` through `5.6.3`
+    - each subfunction now explicitly contains both `后端实现。` and `前端实现。` paragraphs
+    - retained the module-level white-background code screenshot subsections
+  - Validation passed:
+    - `python3 -m py_compile workflow_bundle/tools/core/chapter_profile.py workflow_bundle/tools/core/writing.py`
+    - `bash workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 workflow_bundle/tools/cli.py sync-workflow-assets --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 workflow_bundle/tools/cli.py prepare-chapter --config workspaces/teatrace_thesis/workflow/configs/workspace.json --chapter 05-系统实现.md`
+    - `python3 workflow_bundle/tools/cli.py start-chapter --config workspaces/teatrace_thesis/workflow/configs/workspace.json --chapter 05-系统实现.md`
+    - `python3 workflow_bundle/tools/cli.py release-build --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 workflow_bundle/tools/cli.py release-verify --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - Packet and chapter verification:
+    - refreshed `chapter_briefs/05-系统实现.md` now explicitly states every subfunction must contain `后端实现。` and `前端实现。`
+    - refreshed `chapter_packets/05-系统实现.md` now explicitly states both backend and frontend paragraphs are mandatory in every Chapter 5 subfunction subsection
+    - `workspaces/teatrace_thesis/polished_v3/05-系统实现.md` now contains explicit backend/frontend paragraph pairs for every subfunction section
+  - State-machine note:
+    - attempted `finalize-chapter --status polished` after packet refresh
+    - workflow correctly rejected the invalid transition `reviewed -> polished` for Chapter 5, so no queue status was mutated by hand
+  - Runtime status after verification:
+    - `python3 workflow_bundle/tools/cli.py resume --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - workspace phase returned to `linux-release-ready`

@@ -1724,7 +1724,9 @@ def _chapter_packet(
                 "For chapter 5, open the chapter by explaining the implementation organization rationale in terms of business modules and role collaboration, not by listing backend/frontend layers separately.\n",
                 "For chapter 5, each core module must use business-oriented subfunction subsections derived from the project documentation.\n",
                 "Each module should begin from its business responsibility and functional role in the full system flow before introducing concrete implementation details.\n",
-                "In each subfunction subsection, integrate backend and frontend implementation evidence together instead of splitting the module into standalone backend/frontend headings.\n",
+                "In each subfunction subsection, write two explicit thesis-style implementation paragraphs in this order: `后端实现。` first, then `前端实现。`.\n",
+                "Both backend and frontend paragraphs are mandatory in every chapter 5 subfunction subsection, even when one side is shorter.\n",
+                "Backend paragraphs should focus on interface orchestration, role checks, database persistence, and chain interaction when applicable; frontend paragraphs should focus on page entry, form/list interaction, state feedback, and route flow.\n",
                 "Do not let chapter 5 drift into a pure development chronology such as 'first backend, then frontend, then interface联调'; present the implementation as completed business capabilities.\n",
                 "Each module must still keep a final dedicated code screenshot subsection, and those screenshots must come from the real white-background code evidence pack.\n",
                 "Do not invent code blocks. Only use the extracted snippet and screenshot paths already staged in the workspace.\n",
@@ -1907,7 +1909,8 @@ def _brief_style_rules(chapter: str, research_contract: dict[str, Any]) -> list[
             [
                 "第 5 章按业务模块组织，而不是按前端/后端开发顺序组织。",
                 "每个模块先写业务职责，再写子功能实现，最后保留关键代码截图小节。",
-                "子功能小节中应整合后端与前端实现，不拆成平行的“后端实现/前端实现”小节。",
+                "每个子功能小节都必须同时出现“后端实现。”和“前端实现。”两段，顺序固定为后端在前、前端在后。",
+                "后端段落应落到接口、服务编排、角色校验、数据库写入和链上协同；前端段落应落到页面入口、表单/列表交互、状态反馈和路由跳转。",
                 "只能使用已抽取到工作区的真实代码证据与白底黑字截图，不得自造代码块。",
             ]
         )
