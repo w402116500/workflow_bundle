@@ -3238,3 +3238,32 @@
     - top/bottom single borders with size `8` are present
   - Refreshed workspace-local workflow assets after the bundle signature changed:
     - `python3 workflow_bundle/tools/cli.py sync-workflow-assets --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 170
+- Action: Fixed DOCX heading color export so generated titles and heading-linked character styles are forced to black instead of inheriting Word's blue theme color.
+- Purpose: Resolve the formatting issue where generated chapter titles and heading text appeared blue rather than the required black.
+- Result:
+  - Updated:
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+  - Implementation changes:
+    - added low-level helpers to force `w:color w:val="000000"` and strip `w:themeColor`, `w:themeTint`, and `w:themeShade` from run/style properties
+    - applied the black-color helper to:
+      - `Normal`
+      - `Heading 1` to `Heading 4`
+      - linked heading character styles corresponding to `Heading1Char` to `Heading4Char`
+      - title runs created by `_add_title(...)`
+      - superscript citation runs created by `_add_superscript_text(...)`
+      - caption and TOC styles configured by the exporter
+    - refined linked-style lookup to avoid the deprecated `style_id` access warning during build
+  - Synced bundle core back to root compatibility mirror:
+    - `bash workflow_bundle/workflow/scripts/sync_root_compat.sh`
+  - Validation passed:
+    - `python3 -m py_compile workflow_bundle/tools/core/build_final_thesis_docx.py`
+    - `bash workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 workflow_bundle/tools/cli.py release-build --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - XML-level verification on regenerated `workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`:
+    - `Heading1`, `Heading2`, `Heading3`, and `Heading4` each resolve to `w:color w:val="000000"`
+    - `Heading1Char`, `Heading2Char`, `Heading3Char`, and `Heading4Char` each resolve to `w:color w:val="000000"`
+    - the heading style color nodes no longer carry theme-color attributes
+  - Refreshed workspace-local workflow assets after the bundle signature changed:
+    - `python3 workflow_bundle/tools/cli.py sync-workflow-assets --config workspaces/teatrace_thesis/workflow/configs/workspace.json`

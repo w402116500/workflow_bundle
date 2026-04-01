@@ -257,6 +257,41 @@ def _set_run_rfonts(run, east_asia: str, ascii_font: str):
     rfonts.set(qn("w:cs"), ascii_font)
 
 
+def _force_rpr_color_black(rpr) -> None:
+    color = rpr.find(qn("w:color"))
+    if color is None:
+        color = OxmlElement("w:color")
+        rpr.append(color)
+    for attr in ("w:themeColor", "w:themeTint", "w:themeShade"):
+        try:
+            color.attrib.pop(qn(attr), None)
+        except Exception:
+            pass
+    color.set(qn("w:val"), "000000")
+
+
+def _set_style_color_black(style) -> None:
+    style.font.color.rgb = RGBColor(0, 0, 0)
+    _force_rpr_color_black(style.element.get_or_add_rPr())
+
+
+def _set_run_color_black(run) -> None:
+    run.font.color.rgb = RGBColor(0, 0, 0)
+    _force_rpr_color_black(run._element.get_or_add_rPr())
+
+
+def _force_style_element_color_black_by_id(doc: Document, style_id: str) -> None:
+    for style_el in doc.styles.element.findall(qn("w:style")):
+        if style_el.get(qn("w:styleId")) != style_id:
+            continue
+        rpr = style_el.find(qn("w:rPr"))
+        if rpr is None:
+            rpr = OxmlElement("w:rPr")
+            style_el.append(rpr)
+        _force_rpr_color_black(rpr)
+        return
+
+
 def _configure_page(doc: Document):
     section = doc.sections[0]
     section.page_width = Mm(210)
@@ -272,8 +307,8 @@ def _configure_styles(doc: Document):
     normal = doc.styles["Normal"]
     normal.font.size = Pt(12)
     normal.font.bold = False
-    normal.font.color.rgb = RGBColor(0, 0, 0)
     _set_style_rfonts(normal, east_asia="SimSun", ascii_font="Times New Roman")
+    _set_style_color_black(normal)
     ppf = normal.paragraph_format
     ppf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
     ppf.line_spacing = Pt(LINE_SPACING_PT)
@@ -287,20 +322,29 @@ def _configure_styles(doc: Document):
             st = doc.styles.add_style(name, 1)
         st.font.size = Pt(size_pt)
         st.font.bold = False
-        st.font.color.rgb = RGBColor(0, 0, 0)
         _set_style_rfonts(st, east_asia="SimHei", ascii_font="Times New Roman")
+        _set_style_color_black(st)
         pf = st.paragraph_format
         pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
         pf.line_spacing = Pt(LINE_SPACING_PT)
         pf.space_before = Pt(TITLE_SPACING_HALF_LINE)
         pf.space_after = Pt(TITLE_SPACING_HALF_LINE)
         pf.alignment = align
+        try:
+            linked = doc.styles[f"{name} Char"]
+        except Exception:
+            linked = None
+        if linked is not None:
+            _set_style_rfonts(linked, east_asia="SimHei", ascii_font="Times New Roman")
+            _set_style_color_black(linked)
         return st
 
     add_heading_style("Heading 1", 18, WD_ALIGN_PARAGRAPH.LEFT)
     add_heading_style("Heading 2", 15, WD_ALIGN_PARAGRAPH.LEFT)
     add_heading_style("Heading 3", 14, WD_ALIGN_PARAGRAPH.LEFT)
     add_heading_style("Heading 4", 12, WD_ALIGN_PARAGRAPH.LEFT)
+    for style_id in ("Heading1", "Heading2", "Heading3", "Heading4", "Heading1Char", "Heading2Char", "Heading3Char", "Heading4Char"):
+        _force_style_element_color_black_by_id(doc, style_id)
 
     def _configure_toc_style(name: str, east_asia: str, size_pt: float):
         try:
@@ -309,8 +353,8 @@ def _configure_styles(doc: Document):
             return
         st.font.size = Pt(size_pt)
         st.font.bold = False
-        st.font.color.rgb = RGBColor(0, 0, 0)
         _set_style_rfonts(st, east_asia=east_asia, ascii_font="Times New Roman")
+        _set_style_color_black(st)
         pf = st.paragraph_format
         pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
         pf.line_spacing = Pt(LINE_SPACING_PT)
@@ -324,8 +368,8 @@ def _configure_styles(doc: Document):
     cap = doc.styles.add_style("FigureCaption", 1) if "FigureCaption" not in doc.styles else doc.styles["FigureCaption"]
     cap.font.size = Pt(12)
     cap.font.bold = True
-    cap.font.color.rgb = RGBColor(0, 0, 0)
     _set_style_rfonts(cap, east_asia="SimHei", ascii_font="Times New Roman")
+    _set_style_color_black(cap)
     cap_pf = cap.paragraph_format
     cap_pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
     cap_pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
@@ -336,8 +380,8 @@ def _configure_styles(doc: Document):
     tcap = doc.styles.add_style("TableCaption", 1) if "TableCaption" not in doc.styles else doc.styles["TableCaption"]
     tcap.font.size = Pt(12)
     tcap.font.bold = True
-    tcap.font.color.rgb = RGBColor(0, 0, 0)
     _set_style_rfonts(tcap, east_asia="SimHei", ascii_font="Times New Roman")
+    _set_style_color_black(tcap)
     tcap_pf = tcap.paragraph_format
     tcap_pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
     tcap_pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
@@ -445,6 +489,7 @@ def _add_title(doc: Document, text: str, font: str, bold: bool, style: str | Non
     r.font.bold = bold
     r.font.name = "Times New Roman"
     _set_run_rfonts(r, east_asia=font, ascii_font="Times New Roman")
+    _set_run_color_black(r)
     return p
 
 
@@ -630,8 +675,8 @@ def _add_superscript_text(paragraph, text: str):
     run.font.superscript = True
     run.font.size = Pt(10.5)
     run.font.size = Pt(10.5)
-    run.font.color.rgb = RGBColor(0, 0, 0)
     _set_run_rfonts(run, east_asia="SimSun", ascii_font="Times New Roman")
+    _set_run_color_black(run)
 
 
 def _add_text_with_cite_links(paragraph, text: str, ref_nums: set[str]):
