@@ -717,6 +717,14 @@ def _set_cell_border(cell, edge: str, val: str, size: str = "0", color: str = "0
     _set_border(border, val=val, size=size, color=color)
 
 
+def _clear_table_style(table):
+    tbl = table._tbl
+    tbl_pr = tbl.tblPr
+    style = tbl_pr.find(qn("w:tblStyle"))
+    if style is not None:
+        tbl_pr.remove(style)
+
+
 def _apply_three_line_table(table, color: str = "000000"):
     tbl = table._tbl
     tbl_pr = tbl.tblPr
@@ -742,14 +750,21 @@ def _apply_three_line_table(table, color: str = "000000"):
 
     if table.rows:
         for cell in table.rows[0].cells:
+            _set_cell_border(cell, "top", val="single", size="8", color=color)
             _set_cell_border(cell, "bottom", val="single", size="8", color=color)
             for edge in ("left", "right"):
                 _set_cell_border(cell, edge, val="nil", color=color)
 
     for row in table.rows[1:]:
         for cell in row.cells:
+            _set_cell_border(cell, "top", val="nil", color=color)
+            _set_cell_border(cell, "bottom", val="nil", color=color)
             for edge in ("left", "right"):
                 _set_cell_border(cell, edge, val="nil", color=color)
+
+    if len(table.rows) > 1:
+        for cell in table.rows[-1].cells:
+            _set_cell_border(cell, "bottom", val="single", size="8", color=color)
 
 
 def _process_image(src: Path) -> Path:
@@ -845,7 +860,7 @@ def _add_table(doc: Document, caption: str | None, headers: list[str], rows: lis
 
     table = doc.add_table(rows=1, cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.style = "Table Grid"
+    _clear_table_style(table)
 
     hdr_cells = table.rows[0].cells
     for i, h in enumerate(headers):

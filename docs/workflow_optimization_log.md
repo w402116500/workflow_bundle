@@ -3209,3 +3209,32 @@
       - `phase: linux-release-ready`
       - `workflow_signature_status: current`
       - `lock_status: unlocked`
+
+### Step 169
+- Action: Fixed DOCX table rendering so workflow-generated tables no longer inherit Word's full grid style and instead render as three-line tables.
+- Purpose: Resolve the formatting issue where generated thesis tables looked like full bordered grid tables rather than the expected academic `三线表`.
+- Result:
+  - Updated:
+    - `workflow_bundle/tools/core/build_final_thesis_docx.py`
+  - Implementation changes:
+    - added `_clear_table_style(table)` to remove `w:tblStyle` from generated tables
+    - stopped assigning `Table Grid` in `_add_table(...)`
+    - strengthened `_apply_three_line_table(...)` so it explicitly writes:
+      - top border on the header row
+      - bottom border on the header row
+      - bottom border on the last row
+      - no left/right borders
+      - no inner horizontal/vertical borders
+  - Synced bundle core back to root compatibility mirror:
+    - `bash workflow_bundle/workflow/scripts/sync_root_compat.sh`
+  - Validation passed:
+    - `python3 -m py_compile workflow_bundle/tools/core/build_final_thesis_docx.py`
+    - `bash workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 workflow_bundle/tools/cli.py release-build --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - XML-level verification on regenerated `workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`:
+    - `TableGrid count: 0`
+    - `tblStyle count: 0`
+    - `insideH nil` and `insideV nil` are present
+    - top/bottom single borders with size `8` are present
+  - Refreshed workspace-local workflow assets after the bundle signature changed:
+    - `python3 workflow_bundle/tools/cli.py sync-workflow-assets --config workspaces/teatrace_thesis/workflow/configs/workspace.json`
