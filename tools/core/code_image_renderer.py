@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 from pathlib import Path
 from typing import Iterable
@@ -8,6 +9,14 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 CODE_RENDER_TABSIZE = 4
 CODE_RENDER_WRAP_SOFT_BREAK_CHARS = set(" ,.;:)]}>/\\|=+-*&")
+
+
+@dataclass
+class CodeImageLayout:
+    font: ImageFont.ImageFont
+    selected_font: str | None
+    wrapped_lines: list[str]
+    line_height: int
 
 
 def build_bundled_font_candidates(anchor_file: Path, bundled_relative_paths: Iterable[Path]) -> list[Path]:
@@ -103,19 +112,13 @@ def _wrap_code_line(
     return segments
 
 
-def render_code_lines_image(
+def prepare_code_image_layout(
     code_lines: list[str],
-    output_path: Path,
     *,
     font_candidates: Iterable[Path],
     font_size: int,
-    padding_x: int,
-    padding_y: int,
-    line_pad: int,
-    border_px: int,
     max_content_width_px: int | None = None,
-    fixed_canvas_width_px: int | None = None,
-) -> str | None:
+) -> CodeImageLayout:
     font, selected_font = load_code_font(font_candidates, font_size)
     normalized_lines = [line.expandtabs(CODE_RENDER_TABSIZE).replace("\r", "") for line in code_lines]
 
@@ -131,13 +134,57 @@ def render_code_lines_image(
     safe_lines = [line if line.strip() else " " for line in wrapped_lines] or [" "]
 
     line_heights: list[int] = []
+    for line in safe_lines:
+        _, height = _measure_text(draw, line, font)
+        line_heights.append(height)
+
+    return CodeImageLayout(
+        font=font,
+        selected_font=selected_font,
+        wrapped_lines=safe_lines,
+        line_height=max(line_heights) if line_heights else font_size,
+    )
+
+
+def split_code_image_lines(
+    layout: CodeImageLayout,
+    *,
+    padding_y: int,
+    line_pad: int,
+    border_px: int,
+    max_image_height_px: int,
+) -> list[list[str]]:
+    usable_height = max(1, max_image_height_px - (padding_y * 2) - (border_px * 2) + line_pad)
+    lines_per_image = max(1, usable_height // max(1, layout.line_height + line_pad))
+    return [
+        layout.wrapped_lines[idx : idx + lines_per_image]
+        for idx in range(0, len(layout.wrapped_lines), lines_per_image)
+    ] or [[" "]]
+
+
+def render_prepared_code_lines_image(
+    prepared_lines: list[str],
+    output_path: Path,
+    *,
+    font: ImageFont.ImageFont,
+    padding_x: int,
+    padding_y: int,
+    line_pad: int,
+    border_px: int,
+    fixed_canvas_width_px: int | None = None,
+) -> None:
+    safe_lines = [line if line.strip() else " " for line in prepared_lines] or [" "]
+    dummy = Image.new("RGB", (10, 10), "white")
+    draw = ImageDraw.Draw(dummy)
+
+    line_heights: list[int] = []
     max_width = 0
     for line in safe_lines:
         width, height = _measure_text(draw, line, font)
         max_width = max(max_width, width)
         line_heights.append(height)
 
-    line_height = max(line_heights) if line_heights else font_size
+    line_height = max(line_heights) if line_heights else 1
     content_width = max(max_width, fixed_canvas_width_px or 0)
     img_w = content_width + padding_x * 2
     img_h = (line_height + line_pad) * len(safe_lines) - line_pad + padding_y * 2
@@ -152,4 +199,35 @@ def render_code_lines_image(
     image = ImageOps.expand(image, border=border_px, fill="black")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     image.save(output_path, format="PNG")
-    return selected_font
+
+
+def render_code_lines_image(
+    code_lines: list[str],
+    output_path: Path,
+    *,
+    font_candidates: Iterable[Path],
+    font_size: int,
+    padding_x: int,
+    padding_y: int,
+    line_pad: int,
+    border_px: int,
+    max_content_width_px: int | None = None,
+    fixed_canvas_width_px: int | None = None,
+) -> str | None:
+    layout = prepare_code_image_layout(
+        code_lines,
+        font_candidates=font_candidates,
+        font_size=font_size,
+        max_content_width_px=max_content_width_px,
+    )
+    render_prepared_code_lines_image(
+        layout.wrapped_lines,
+        output_path,
+        font=layout.font,
+        padding_x=padding_x,
+        padding_y=padding_y,
+        line_pad=line_pad,
+        border_px=border_px,
+        fixed_canvas_width_px=fixed_canvas_width_px,
+    )
+    return layout.selected_font

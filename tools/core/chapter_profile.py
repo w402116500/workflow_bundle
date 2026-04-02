@@ -97,6 +97,17 @@ def _chapter5_screenshot_requirements(modules: list[dict[str, Any]]) -> list[dic
             _asset_requirement("figures", "test-screenshot", "实现章节至少插入 2 张页面截图", min_count=2, section="5 系统实现")
         ]
 
+    module_keys = {str(module.get("key", "")).strip() for module in modules}
+    if {"identity", "batch", "record", "trace"}.issubset(module_keys):
+        return [
+            _asset_requirement("figures", "test-screenshot", "实现章节注册登录页面截图", section="5.2.1 注册登录与会话建立实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节权限治理页面截图", min_count=2, section="5.2.3 用户管理与权限治理实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节批次管理页面截图", section="5.3.3 批次状态维护与全流程入口实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节生产记录页面截图", section="5.4.1 生产环节记录录入实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节质检物流页面截图", min_count=2, section="5.4.2 仓储物流等流转记录实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节公开追溯结果页面截图", section="5.5.3 公开追溯查询与结果展示实现"),
+        ]
+
     ordered_modules = _chapter5_screenshot_module_order(modules)
     if len(ordered_modules) == 1:
         section = _chapter5_module_terminal_section(modules[ordered_modules[0]], ordered_modules[0])

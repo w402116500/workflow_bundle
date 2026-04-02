@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,8 +21,8 @@ from core.project_common import (
 
 CODE_SCREENSHOT_FONT_ENV_VAR = "THESIS_CODE_SCREENSHOT_FONT"
 CODE_SCREENSHOT_BUNDLED_FONT_RELATIVE_PATHS = [
-    Path("assets/fonts/siyuan-heiti/SourceHanSansSC-Regular-2.otf"),
     Path("assets/fonts/sarasa-mono-sc/SarasaMonoSC-Regular.ttf"),
+    Path("assets/fonts/siyuan-heiti/SourceHanSansSC-Regular-2.otf"),
 ]
 CODE_SCREENSHOT_PRIMARY_FONT_PATHS = [
     Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
@@ -31,10 +32,18 @@ CODE_SCREENSHOT_PRIMARY_FONT_PATHS = [
     Path("C:/Windows/Fonts/consolab.ttf"),
     Path("C:/Windows/Fonts/Consolas.ttf"),
 ]
-CODE_SCREENSHOT_FONT_SIZE_PX = 16
-CODE_SCREENSHOT_IMAGE_PAD_PX = 16
-CODE_SCREENSHOT_LINE_PAD_PX = 2
+CODE_SCREENSHOT_FONT_SIZE_PX = 13
+CODE_SCREENSHOT_IMAGE_PAD_PX = 12
+CODE_SCREENSHOT_LINE_PAD_PX = 0
 CODE_SCREENSHOT_BORDER_PX = 1
+CODE_SCREENSHOT_MM_PER_PX = 0.25
+CODE_SCREENSHOT_MAX_DISPLAY_WIDTH_MM = 148.0
+CODE_SCREENSHOT_MAX_CONTENT_WIDTH_PX = max(
+    240,
+    int(round(CODE_SCREENSHOT_MAX_DISPLAY_WIDTH_MM / CODE_SCREENSHOT_MM_PER_PX))
+    - (CODE_SCREENSHOT_IMAGE_PAD_PX * 2)
+    - (CODE_SCREENSHOT_BORDER_PX * 2),
+)
 def _now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
@@ -596,6 +605,8 @@ def _render_code_screenshot(snippet: str, source_path: Path, output_path: Path) 
         padding_y=CODE_SCREENSHOT_IMAGE_PAD_PX,
         line_pad=CODE_SCREENSHOT_LINE_PAD_PX,
         border_px=CODE_SCREENSHOT_BORDER_PX,
+        max_content_width_px=CODE_SCREENSHOT_MAX_CONTENT_WIDTH_PX,
+        fixed_canvas_width_px=CODE_SCREENSHOT_MAX_CONTENT_WIDTH_PX,
     )
 
 
@@ -638,8 +649,10 @@ def build_code_evidence_pack(ctx: dict[str, Any], output_paths: dict[str, Path] 
     project_root = Path(manifest["project_root"]).resolve()
     output_paths = output_paths or material_output_paths(ctx["config"], workspace_root)
 
-    output_paths["code_snippets_dir"].mkdir(parents=True, exist_ok=True)
-    output_paths["code_screenshots_dir"].mkdir(parents=True, exist_ok=True)
+    for generated_dir in (output_paths["code_snippets_dir"], output_paths["code_screenshots_dir"]):
+        if generated_dir.exists():
+            shutil.rmtree(generated_dir)
+        generated_dir.mkdir(parents=True, exist_ok=True)
 
     source_paths = manifest.get("source_paths", {})
     backend_dir = _abs_project_path(project_root, source_paths.get("backend"))

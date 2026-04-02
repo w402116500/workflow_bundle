@@ -17,7 +17,12 @@ from docx.oxml.ns import qn
 from docx.shared import Mm, Pt, RGBColor
 from PIL import Image
 
-from core.code_image_renderer import build_bundled_font_candidates, render_code_lines_image
+from core.code_image_renderer import (
+    build_bundled_font_candidates,
+    prepare_code_image_layout,
+    render_prepared_code_lines_image,
+    split_code_image_lines,
+)
 
 WORKSPACE_DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = None
@@ -55,14 +60,15 @@ DEFAULT_CHAPTER_ORDER = [
 DEFAULT_KEYWORDS_CN = "FISCO BCOS；区块链；健康档案；访问控制；存证审计"
 DEFAULT_KEYWORDS_EN = "FISCO BCOS; blockchain; health record; access control; notarization and audit"
 CODE_RENDER_FONT_ENV_VAR = "THESIS_CODE_SCREENSHOT_FONT"
-CODE_RENDER_FONT_SIZE_PX = 14
+CODE_RENDER_FONT_SIZE_PX = 13
 CODE_RENDER_BORDER_PX = 1
-CODE_RENDER_IMAGE_PAD_X_PX = 16
-CODE_RENDER_IMAGE_PAD_Y_PX = 12
-CODE_RENDER_LINE_PAD_PX = 1
+CODE_RENDER_IMAGE_PAD_X_PX = 12
+CODE_RENDER_IMAGE_PAD_Y_PX = 10
+CODE_RENDER_LINE_PAD_PX = 0
 CODE_RENDER_PARAGRAPH_LEFT_INDENT_PT = 10
 CODE_RENDER_MM_PER_PX = 0.25
-CODE_RENDER_MAX_DISPLAY_WIDTH_MM = 155.0
+CODE_RENDER_MAX_DISPLAY_WIDTH_MM = 148.0
+CODE_RENDER_MAX_DISPLAY_HEIGHT_MM = 135.0
 CODE_RENDER_MAX_CONTENT_WIDTH_PX = max(
     240,
     int(round(CODE_RENDER_MAX_DISPLAY_WIDTH_MM / CODE_RENDER_MM_PER_PX))
@@ -71,8 +77,8 @@ CODE_RENDER_MAX_CONTENT_WIDTH_PX = max(
 )
 CODE_RENDER_FIXED_CANVAS_WIDTH_PX = CODE_RENDER_MAX_CONTENT_WIDTH_PX
 CODE_RENDER_BUNDLED_FONT_RELATIVE_PATHS = [
-    Path("assets/fonts/siyuan-heiti/SourceHanSansSC-Regular-2.otf"),
     Path("assets/fonts/sarasa-mono-sc/SarasaMonoSC-Regular.ttf"),
+    Path("assets/fonts/siyuan-heiti/SourceHanSansSC-Regular-2.otf"),
 ]
 CODE_RENDER_FONT_PATH_CANDIDATES = [
     Path("C:/Windows/Fonts/consola.ttf"),
@@ -462,26 +468,47 @@ def _add_section_break(doc: Document):
     doc.add_section(WD_SECTION_START.NEW_PAGE)
 
 
-def _render_code_image(code_lines: list[str], output_path: Path, font_size: int = CODE_RENDER_FONT_SIZE_PX) -> Path:
+def _render_code_images(code_lines: list[str], output_path: Path, font_size: int = CODE_RENDER_FONT_SIZE_PX) -> list[Path]:
     font_candidates: list[Path] = []
     custom_font = os.environ.get(CODE_RENDER_FONT_ENV_VAR, "").strip()
     if custom_font:
         font_candidates.append(Path(custom_font))
     font_candidates.extend(build_bundled_font_candidates(Path(__file__), CODE_RENDER_BUNDLED_FONT_RELATIVE_PATHS))
     font_candidates.extend(CODE_RENDER_FONT_PATH_CANDIDATES)
-    render_code_lines_image(
+
+    layout = prepare_code_image_layout(
         code_lines,
-        output_path,
         font_candidates=font_candidates,
         font_size=font_size,
-        padding_x=CODE_RENDER_IMAGE_PAD_X_PX,
+        max_content_width_px=CODE_RENDER_MAX_CONTENT_WIDTH_PX,
+    )
+
+    max_image_height_px = max(240, int(round(CODE_RENDER_MAX_DISPLAY_HEIGHT_MM / CODE_RENDER_MM_PER_PX)))
+    chunks = split_code_image_lines(
+        layout,
         padding_y=CODE_RENDER_IMAGE_PAD_Y_PX,
         line_pad=CODE_RENDER_LINE_PAD_PX,
         border_px=CODE_RENDER_BORDER_PX,
-        max_content_width_px=CODE_RENDER_MAX_CONTENT_WIDTH_PX,
-        fixed_canvas_width_px=CODE_RENDER_FIXED_CANVAS_WIDTH_PX,
+        max_image_height_px=max_image_height_px,
     )
-    return output_path
+
+    rendered_paths: list[Path] = []
+    stem = output_path.stem
+    suffix = output_path.suffix or ".png"
+    for idx, chunk_lines in enumerate(chunks, start=1):
+        chunk_path = output_path if len(chunks) == 1 else output_path.with_name(f"{stem}_part{idx}{suffix}")
+        render_prepared_code_lines_image(
+            chunk_lines,
+            chunk_path,
+            font=layout.font,
+            padding_x=CODE_RENDER_IMAGE_PAD_X_PX,
+            padding_y=CODE_RENDER_IMAGE_PAD_Y_PX,
+            line_pad=CODE_RENDER_LINE_PAD_PX,
+            border_px=CODE_RENDER_BORDER_PX,
+            fixed_canvas_width_px=CODE_RENDER_FIXED_CANVAS_WIDTH_PX,
+        )
+        rendered_paths.append(chunk_path)
+    return rendered_paths
 
 
 def _add_title(doc: Document, text: str, font: str, bold: bool, style: str | None = None):
@@ -1009,21 +1036,27 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
                 code_block_index += 1
                 img_name = f"codeblock_{md_path.stem}_{code_block_index}.png"
                 img_path = SETTINGS.processed_img_dir / img_name
-                _render_code_image(code_lines, img_path)
-                p = doc.add_paragraph()
-                _apply_body_paragraph_format(p, indent=False)
-                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                p.paragraph_format.left_indent = Pt(CODE_RENDER_PARAGRAPH_LEFT_INDENT_PT)
-                run = p.add_run()
-                with Image.open(img_path) as code_image:
-                    width_px, height_px = code_image.size
-                width_mm = width_px * CODE_RENDER_MM_PER_PX
-                height_mm = height_px * CODE_RENDER_MM_PER_PX
-                if width_mm > CODE_RENDER_MAX_DISPLAY_WIDTH_MM:
-                    scale = CODE_RENDER_MAX_DISPLAY_WIDTH_MM / width_mm
-                    width_mm = CODE_RENDER_MAX_DISPLAY_WIDTH_MM
+                rendered_paths = _render_code_images(code_lines, img_path)
+                for part_index, rendered_path in enumerate(rendered_paths, start=1):
+                    p = doc.add_paragraph()
+                    _apply_body_paragraph_format(p, indent=False)
+                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    p.paragraph_format.left_indent = Pt(CODE_RENDER_PARAGRAPH_LEFT_INDENT_PT)
+                    p.paragraph_format.space_before = Pt(6 if part_index == 1 else 2)
+                    p.paragraph_format.space_after = Pt(2 if part_index < len(rendered_paths) else 6)
+                    run = p.add_run()
+                    with Image.open(rendered_path) as code_image:
+                        width_px, height_px = code_image.size
+                    width_mm = width_px * CODE_RENDER_MM_PER_PX
+                    height_mm = height_px * CODE_RENDER_MM_PER_PX
+                    scale = min(
+                        1.0,
+                        CODE_RENDER_MAX_DISPLAY_WIDTH_MM / max(width_mm, 1e-6),
+                        CODE_RENDER_MAX_DISPLAY_HEIGHT_MM / max(height_mm, 1e-6),
+                    )
+                    width_mm *= scale
                     height_mm *= scale
-                run.add_picture(str(img_path), width=Mm(width_mm), height=Mm(height_mm))
+                    run.add_picture(str(rendered_path), width=Mm(width_mm), height=Mm(height_mm))
             continue
 
         m_h = HEADING_RE.match(line)

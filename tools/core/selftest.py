@@ -102,6 +102,11 @@ def _inspect_docx_xml(docx_path: Path) -> str:
         return zf.read("word/document.xml").decode("utf-8", errors="replace")
 
 
+def _extract_docx_image_extents_cm(docx_xml: str) -> list[tuple[float, float]]:
+    matches = re.findall(r'<wp:extent cx="(\d+)" cy="(\d+)"', docx_xml)
+    return [(int(cx) / 360000.0, int(cy) / 360000.0) for cx, cy in matches]
+
+
 def _bundle_cli_path() -> Path:
     return PRIMARY_WORKFLOW_ROOT / "tools" / "cli.py"
 
@@ -339,7 +344,54 @@ def _run_workspace_stage(config_path: Path, out_root: Path) -> dict[str, Any]:
 
         chapter5_path = ctx["workspace_root"] / ctx["config"].get("build", {}).get("input_dir", "polished_v3") / "05-系统实现.md"
         chapter5_text = chapter5_path.read_text(encoding="utf-8") if chapter5_path.exists() else ""
+        chapter5_image_refs: list[str] = []
+        for match in re.finditer(r"!\[[^\]]*\]\(([^)]+)\)", chapter5_text):
+            rel = str(match.group(1) or "").strip().split()[0] if str(match.group(1) or "").strip() else ""
+            if rel:
+                chapter5_image_refs.append(rel)
+        chapter5_missing_images = [
+            rel for rel in chapter5_image_refs if not (chapter5_path.parent / rel).resolve().exists()
+        ]
+        assertion = {
+            "label": "chapter5_markdown_image_refs_exist",
+            "ok": not chapter5_missing_images,
+            "missing": chapter5_missing_images,
+        }
+        stage["assertions"].append(assertion)
+        _require(assertion["ok"], f"chapter 5 contains broken markdown image refs: {chapter5_missing_images}")
+        chapter5_page_screenshot_refs = [rel for rel in chapter5_image_refs if "docs/images/chapter5/" in rel]
+        project_profile_path = ctx["workspace_root"] / "docs" / "writing" / "project_profile.json"
+        required_page_screenshots = 0
+        if project_profile_path.exists():
+            project_profile = read_json(project_profile_path)
+            required_page_screenshots = sum(
+                int(asset.get("min_count", 1) or 1)
+                for asset in project_profile.get("chapter_profile", {}).get("05-系统实现.md", {}).get("required_assets", [])
+                if asset.get("asset_type") == "figures" and asset.get("kind") == "test-screenshot"
+            )
+        if required_page_screenshots > 0:
+            assertion = {
+                "label": "chapter5_page_screenshot_refs",
+                "ok": len(chapter5_page_screenshot_refs) >= required_page_screenshots,
+                "actual": len(chapter5_page_screenshot_refs),
+                "expected_min": required_page_screenshots,
+            }
+            stage["assertions"].append(assertion)
+            _require(
+                assertion["ok"],
+                f"chapter 5 page screenshots missing: {len(chapter5_page_screenshot_refs)} < {required_page_screenshots}",
+            )
         docx_xml = _inspect_docx_xml(docx_path)
+        image_extents_cm = _extract_docx_image_extents_cm(docx_xml)
+        max_image_height_cm = max((height for _, height in image_extents_cm), default=0.0)
+        max_image_width_cm = max((width for width, _ in image_extents_cm), default=0.0)
+        for label, ok, actual in (
+            ("docx_max_image_height_cm", max_image_height_cm <= 21.0, round(max_image_height_cm, 2)),
+            ("docx_max_image_width_cm", max_image_width_cm <= 16.0, round(max_image_width_cm, 2)),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], f"workspace DOCX image layout overflow detected: {label}={actual}")
         if "docs/materials/code_screenshots/" in chapter5_text:
             assertion = {
                 "label": "code_screenshot_caption_removed",

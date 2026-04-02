@@ -3868,3 +3868,204 @@
     - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
     - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py selftest --workspace-config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
     - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py set-active-workspace --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 192
+- Action: Reworked Chapter 5 code-image rendering so DOCX-exported code blocks use tighter single-line spacing, prefer the bundled Sarasa Mono SC font, auto-split overlong code blocks into multiple images, and clean stale generated code screenshots before rebuilding the evidence pack.
+- Purpose: Fix the issue where code images in the exported thesis were not visually single-spaced and some long code images overflowed the Word page height so the lower part could not be seen.
+- Result:
+  - Renderer changes:
+    - `tools/core/code_image_renderer.py` now exposes reusable layout helpers so code lines can be wrapped once and then split into multiple image chunks without changing font metrics mid-render
+    - `tools/core/build_final_thesis_docx.py` now renders Markdown fenced code blocks at `13px` with `line_pad=0`, reduces the display width to `148mm`, caps display height to `135mm`, and emits `_partN` chunk images when a code block would otherwise exceed the page-safe height
+    - `tools/core/code_evidence.py` now prefers bundled `SarasaMonoSC-Regular.ttf` before Source Han Sans, renders generated code screenshots with the same tighter single-line spacing profile, constrains screenshot width to the same fixed canvas width, and clears old `code_snippets/` and `code_screenshots/` outputs before regeneration
+    - `tools/core/selftest.py` now asserts exported DOCX image extents stay within page-safe bounds, so future regressions will fail automatically if code images grow back to oversized dimensions
+  - Teatrace workspace verification:
+    - regenerated code evidence pack now records `SarasaMonoSC-Regular.ttf` as the selected screenshot font
+    - regenerated referenced code screenshots were normalized from mixed historical sizes to a clean bounded set; after cleanup the `docs/materials/code_screenshots/` directory contains `78` current screenshots with `max_width=592px` and `max_height=684px`
+    - rebuilt Linux deliverable `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v10.docx`
+    - rebuilt release summaries:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/build_runs/build_summary_20260402T133746_0800.json`
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260402T133825_0800.json`
+    - processed code-block images now split automatically, for example `codeblock_05-系统实现_17_part1.png`, `codeblock_05-系统实现_17_part2.png`, and `codeblock_05-系统实现_17_part3.png`
+    - exported DOCX image extents dropped from the previous oversized maximum `36.75cm` height to `15.0cm` max height and `15.0cm` max width
+    - full workflow regression passed again with summary `/tmp/workflow_bundle_selftest_989vwdg8/selftest_summary.json`, including:
+      - `anchors missing bookmarks: 0`
+      - `citation_ref_bookmark_match: 8 vs 8`
+      - `docx_max_image_height_cm: 15.0`
+      - `docx_max_image_width_cm: 15.0`
+      - `code_screenshot_caption_removed: true`
+      - `normal_figure_caption_preserved: true`
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/code_image_renderer.py /home/ub/thesis_materials/workflow_bundle/tools/core/code_evidence.py /home/ub/thesis_materials/workflow_bundle/tools/core/build_final_thesis_docx.py /home/ub/thesis_materials/workflow_bundle/tools/core/selftest.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py extract-code --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v10.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v10.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py selftest --workspace-config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 193
+- Action: Reworked the Chapter 5 frontend page-screenshot workflow, staged additional real UI screenshots into the Teatrace workspace, repaired stale screenshot references in the current chapter, and added regression checks so future runs cannot silently drop or break those images.
+- Purpose: Fix the gap where many frontend implementation subsections in Chapter 5 only had code evidence but no real page screenshots, and make the improved screenshot coverage reproducible in later AI conversations instead of being a one-off manual edit.
+- Result:
+  - Workflow bundle changes:
+    - `tools/core/chapter_profile.py` now upgrades the traceability-domain Chapter 5 screenshot contract from “2 representative screenshots” to a section-level contract that requires:
+      - `5.2.1 注册登录与会话建立实现` -> 1 real page screenshot
+      - `5.2.3 用户管理与权限治理实现` -> 2 real page screenshots
+      - `5.3.3 批次状态维护与全流程入口实现` -> 1 real page screenshot
+      - `5.4.1 生产环节记录录入实现` -> 1 real page screenshot
+      - `5.4.2 仓储物流等流转记录实现` -> 2 real page screenshots
+      - `5.5.3 公开追溯查询与结果展示实现` -> 1 real page screenshot
+    - `tools/core/extract.py` now remaps usable runtime screenshots to the correct subsection targets:
+      - `processor-fixed-flow` -> `5.4.1`
+      - `inspector-fixed-flow` -> `5.4.2`
+      - `logistics-fixed-flow` -> `5.4.2`
+      - `farmer-fixed-flow` -> `5.3.3`
+      - `public-trace-success` -> `5.5.3`
+    - `tools/core/extract.py` also lowers or disables poor default-route screenshots so blank / narrow runtime pages are no longer auto-selected:
+      - `admin-dashboard-and-forbidden-business-route`
+      - `tea-farmer-default-route-and-menu`
+      - `processor-default-route-and-batch-trace`
+      - `inspector-default-route-and-batch-trace`
+      - `logistics-default-route-and-batch-trace`
+    - `tools/core/writing.py` now forces `project_profile.json` to refresh whenever the Chapter 5 screenshot contract changes, and the Chapter 5 brief explicitly states that all selected `test-screenshot` assets must be embedded in the matching frontend subsection.
+    - `tools/core/writing.py` now records figure `source_path` values in `asset_to_section_map`, so new conversations can see which real image file each required page screenshot comes from.
+    - `tools/core/selftest.py` now asserts:
+      - every Markdown image reference in `05-系统实现.md` resolves to an existing file
+      - Chapter 5 page-screenshot references under `docs/images/chapter5/` meet the required screenshot count from `project_profile.json`
+  - Teatrace workspace changes:
+    - staged additional real page screenshots into `workspaces/teatrace_thesis/docs/images/chapter5/`:
+      - `fig5-5-batch-management.png`
+      - `fig5-6-process-records.png`
+      - `fig5-7-inspection-report.png`
+      - `fig5-8-logistics-records.png`
+      - `fig5-9-public-trace.png`
+    - updated `workspaces/teatrace_thesis/polished_v3/05-系统实现.md` so real page screenshots are now embedded in the frontend sections:
+      - `5.3.3 批次状态维护与全流程入口实现`
+      - `5.4.1 生产环节记录录入实现`
+      - `5.4.2 仓储物流等流转记录实现`
+      - `5.5.3 公开追溯查询与结果展示实现`
+    - repaired stale Chapter 5 code-screenshot references after the regenerated `code_screenshots/` cleanup:
+      - `03-record-frontend-01-loaddata.png` -> `03-record-frontend-01-farmrecordspage.png`
+      - `04-trace-backend-01-bind.png` -> `04-trace-backend-01-bindtracecode.png`
+      - `04-trace-frontend-01-showqrcode.png` -> `04-trace-frontend-02-showqrcode.png`
+    - refreshed `project_profile.json`, `chapter_packets/05-系统实现.json`, and `chapter_briefs/05-系统实现.md`; the Chapter 5 packet now selects the expected real screenshots:
+      - registration page
+      - admin dashboard
+      - forbidden page
+      - batch management page
+      - process records page
+      - inspection report page
+      - logistics records page
+      - public trace result page
+    - rebuilt Linux deliverable `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v11.docx`
+    - rebuilt summaries:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/build_runs/build_summary_20260402T141345_0800.json`
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260402T141413_0800.json`
+    - full selftest passed again with summary `/tmp/workflow_bundle_selftest___nbcgey/selftest_summary.json`
+    - workspace selftest assertions confirmed:
+      - `chapter5_markdown_image_refs_exist: true`
+      - `chapter5_page_screenshot_refs: actual=8, expected_min=8`
+      - `docx_max_image_height_cm: 15.0`
+      - `docx_max_image_width_cm: 15.0`
+      - `code_screenshot_caption_removed: true`
+      - `normal_figure_caption_preserved: true`
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/chapter_profile.py /home/ub/thesis_materials/workflow_bundle/tools/core/extract.py /home/ub/thesis_materials/workflow_bundle/tools/core/writing.py /home/ub/thesis_materials/workflow_bundle/tools/core/selftest.py`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py extract --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-writing --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-chapter --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --chapter 05-系统实现.md`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v11.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v11.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py selftest --workspace-config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 194
+- Action: Moved Chapter 5 runtime screenshot staging into the normal writing workflow by auto-copying selected page screenshots during `prepare-chapter`, exposing their workspace paths in the packet/brief, and keeping `prepare-figures` as a release-time resync fallback.
+- Purpose: Ensure a brand-new AI conversation can immediately see and use local Chapter 5 page screenshots while drafting, instead of depending on prior manual copies or only discovering those assets during the final release build.
+- Result:
+  - Workflow bundle changes:
+    - added `tools/core/page_screenshot_assets.py` to centralize Chapter 5 runtime screenshot filename mapping and workspace staging logic
+    - `tools/core/writing.py` now:
+      - adds `workspace_image_path` to selected Chapter 5 `test-screenshot` assets
+      - writes those workspace paths into `asset_to_section_map`
+      - renders a new `## 页面截图落点` section in the Chapter 5 writer brief
+      - stages the selected runtime screenshots into `docs/images/chapter5/` during `prepare-chapter`
+      - records the staging results in packet JSON as `staged_page_screenshots`
+    - `tools/core/figure_assets.py` now reuses the same staging helper and writes `staged_chapter5_screenshots` into `figure_prepare_summary.json`, so release-time `prepare-figures` can restore the local screenshot set even if files were deleted after drafting
+    - `tools/core/writing.py` packet markdown now shows both the original runtime `source` and the staged local `workspace` path for each Chapter 5 page screenshot, plus a dedicated `Staged Page Screenshots` snapshot with `cached/copied/updated` status
+  - Teatrace workspace verification:
+    - rerunning `prepare-chapter --chapter 05-系统实现.md` now stages `8` page screenshots automatically and records them in the packet:
+      - `docs/images/chapter5/fig5-4-register-login.png`
+      - `docs/images/chapter5/fig5-2-admin-dashboard.png`
+      - `docs/images/chapter5/fig5-3-forbidden-page.png`
+      - `docs/images/chapter5/fig5-5-batch-management.png`
+      - `docs/images/chapter5/fig5-6-process-records.png`
+      - `docs/images/chapter5/fig5-7-inspection-report.png`
+      - `docs/images/chapter5/fig5-8-logistics-records.png`
+      - `docs/images/chapter5/fig5-9-public-trace.png`
+    - the refreshed Chapter 5 brief now exposes each screenshot’s runtime source and local workspace path directly, so later AI sessions can write against `docs/images/chapter5/...` without re-deriving filenames
+    - rerunning `prepare-figures` now persists the same `8` staged screenshots under `word_output/figure_prepare_summary.json`
+    - rebuilt Linux deliverable `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v12.docx`
+    - rebuilt summaries:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/build_runs/build_summary_20260402T143006_0800.json`
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260402T143038_0800.json`
+    - full selftest passed again with summary `/tmp/workflow_bundle_selftest_am0fwu7m/selftest_summary.json`
+    - workspace selftest assertions remained green:
+      - `chapter5_markdown_image_refs_exist: true`
+      - `chapter5_page_screenshot_refs: actual=8, expected_min=8`
+      - `workspace_lock_released: true`
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/page_screenshot_assets.py /home/ub/thesis_materials/workflow_bundle/tools/core/figure_assets.py /home/ub/thesis_materials/workflow_bundle/tools/core/writing.py`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-chapter --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --chapter 05-系统实现.md`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v12.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v12.docx`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py selftest --workspace-config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 195
+- Action: Refactored Chapter 5 page screenshot staging to resolve workspace filenames primarily from semantic `selection_group` values, then from target Chapter 5 subsection candidates, while retaining a legacy source-stem compatibility fallback for older runtime artifact names.
+- Purpose: Reduce the workflow's dependence on the current `Teatrace` runtime screenshot filenames so new projects and fresh AI conversations can reproduce the Chapter 5 image-staging flow from semantic evidence metadata instead of memorizing project-specific stems.
+- Result:
+  - Workflow bundle changes:
+    - `tools/core/page_screenshot_assets.py` now applies this filename resolution priority:
+      - `selection_group`
+      - Chapter 5 `section_candidates`
+      - legacy runtime source-stem compatibility map
+      - generic slug fallback
+    - the primary Chapter 5 mappings are now driven by semantic groups such as:
+      - `identity-registration -> fig5-4-register-login.png`
+      - `identity-dashboard -> fig5-2-admin-dashboard.png`
+      - `identity-route-guard -> fig5-3-forbidden-page.png`
+      - `batch-main-flow -> fig5-5-batch-management.png`
+      - `record-process-flow -> fig5-6-process-records.png`
+      - `record-inspection-flow -> fig5-7-inspection-report.png`
+      - `record-logistics-flow -> fig5-8-logistics-records.png`
+      - `trace-success -> fig5-9-public-trace.png`
+    - added semantic fallback targets for less common groups and subsection-only matches, including generic Chapter 5 filenames such as `fig5-2-3-user-permission.png`, `fig5-4-3-stage-progress.png`, and `fig5-5-2-trace-code-control.png`
+    - staged screenshot summaries now record:
+      - `selection_group`
+      - Chapter 5-only `section_candidates`
+      - `name_source`, so later debugging can see whether the final workspace name came from `selection-group`, `section-candidate`, `legacy-source-stem`, or `slug`
+    - `tools/core/writing.py` now exposes `selection_group` in `## 页面截图落点`, and packet markdown now shows both `selection_group` and `name_source` under `### Staged Page Screenshots`
+  - Teatrace workspace verification:
+    - rerunning `prepare-chapter --chapter 05-系统实现.md` preserved the existing `8` selected Chapter 5 screenshot targets and all `staged_page_screenshots` entries now resolve through `name_source: selection-group`
+    - the refreshed brief `/home/ub/thesis_materials/workspaces/teatrace_thesis/docs/writing/chapter_briefs/05-系统实现.md` now exposes each screenshot's source path, workspace path, and semantic `selection_group`, so a fresh AI session can continue drafting directly from the brief without reopening packet JSON first
+    - rerunning `prepare-figures` preserved the same `8` staged screenshot paths in `word_output/figure_prepare_summary.json`, also with `name_source: selection-group`
+    - regenerated root compatibility mirror with `workflow/scripts/sync_root_compat.sh`, which refreshed `tools/core/page_screenshot_assets.py` under the root compatibility path
+    - rebuilt Linux deliverable `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v13.docx`
+    - rebuilt summaries:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/build_runs/build_summary_20260402T143921_0800.json`
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260402T143951_0800.json`
+    - full selftest passed again with summary `/tmp/workflow_bundle_selftest_mc6v6gdu/selftest_summary.json`
+    - the updated screenshot staging metadata is now visible in both:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/docs/writing/chapter_packets/05-系统实现.json`
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/figure_prepare_summary.json`
+- Validation passed:
+  - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/page_screenshot_assets.py /home/ub/thesis_materials/workflow_bundle/tools/core/figure_assets.py /home/ub/thesis_materials/workflow_bundle/tools/core/writing.py`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-chapter --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --chapter 05-系统实现.md`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v13.docx`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v13.docx`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py selftest --workspace-config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`

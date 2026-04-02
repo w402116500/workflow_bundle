@@ -1930,8 +1930,9 @@ def _test_screenshot_profile(path: Path) -> dict[str, Any]:
         profile.update(
             {
                 "sections": ["5.2.3 用户管理与权限治理实现", "6.2.1 用户与权限管理功能测试", "6.2 功能测试"],
-                "selection_score": 100,
+                "selection_score": 24,
                 "selection_group": "identity-permission",
+                "auto_select": False,
             }
         )
     elif "admin-dashboard-fixed-flow" in stem:
@@ -1959,12 +1960,21 @@ def _test_screenshot_profile(path: Path) -> dict[str, Any]:
                 "auto_select": False,
             }
         )
-    elif "dealer-fixed-flow-forbidden" in stem or "tea-farmer-default-route-and-menu" in stem:
+    elif "dealer-fixed-flow-forbidden" in stem:
         profile.update(
             {
                 "sections": ["5.2.3 用户管理与权限治理实现", "6.2.1 用户与权限管理功能测试", "6.2 功能测试"],
                 "selection_score": 78,
                 "selection_group": "identity-route-guard",
+            }
+        )
+    elif "tea-farmer-default-route-and-menu" in stem:
+        profile.update(
+            {
+                "sections": ["5.2.3 用户管理与权限治理实现", "6.2.1 用户与权限管理功能测试", "6.2 功能测试"],
+                "selection_score": 16,
+                "selection_group": "identity-route-menu",
+                "auto_select": False,
             }
         )
     elif "farmer-fixed-flow" in stem:
@@ -1975,12 +1985,28 @@ def _test_screenshot_profile(path: Path) -> dict[str, Any]:
                 "selection_group": "batch-main-flow",
             }
         )
-    elif "processor-fixed-flow" in stem or "inspector-fixed-flow" in stem or "logistics-fixed-flow" in stem:
+    elif "processor-fixed-flow" in stem:
         profile.update(
             {
-                "sections": ["5.4.3 批次阶段推进与结果展示实现", "6.2.3 生产流转记录管理功能测试", "6.2 功能测试"],
+                "sections": ["5.4.1 生产环节记录录入实现", "6.2.3 生产流转记录管理功能测试", "6.2 功能测试"],
                 "selection_score": 82,
-                "selection_group": "record-stage-flow",
+                "selection_group": "record-process-flow",
+            }
+        )
+    elif "inspector-fixed-flow" in stem:
+        profile.update(
+            {
+                "sections": ["5.4.2 仓储物流等流转记录实现", "6.2.3 生产流转记录管理功能测试", "6.2 功能测试"],
+                "selection_score": 82,
+                "selection_group": "record-inspection-flow",
+            }
+        )
+    elif "logistics-fixed-flow" in stem:
+        profile.update(
+            {
+                "sections": ["5.4.2 仓储物流等流转记录实现", "6.2.3 生产流转记录管理功能测试", "6.2 功能测试"],
+                "selection_score": 82,
+                "selection_group": "record-logistics-flow",
             }
         )
     elif "dealer-default-route-and-batch-trace" in stem:
@@ -2019,8 +2045,9 @@ def _test_screenshot_profile(path: Path) -> dict[str, Any]:
         profile.update(
             {
                 "sections": ["5.4.3 批次阶段推进与结果展示实现", "6.2.3 生产流转记录管理功能测试", "6.2 功能测试"],
-                "selection_score": 62,
+                "selection_score": 20,
                 "selection_group": "record-route-trace",
+                "auto_select": False,
             }
         )
     elif "webapp-fixed-accounts-error" in stem:

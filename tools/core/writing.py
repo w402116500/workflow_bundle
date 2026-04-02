@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from core.chapter_profile import (
+    _chapter5_screenshot_requirements,
     build_project_profile,
     chapter_definition,
     chapter_material_sections,
@@ -41,6 +42,7 @@ from core.project_common import (
     write_text,
     writing_output_paths,
 )
+from core.page_screenshot_assets import chapter5_test_screenshot_workspace_relpath, stage_chapter5_test_screenshots
 from core.research_sidecar import (
     build_registry_fallback_index,
     build_research_index,
@@ -206,6 +208,15 @@ def _project_profile_needs_refresh(profile: dict[str, Any]) -> bool:
         return True
     chapter5_policy = chapter_module_implementation_policy(profile, "05-系统实现.md")
     if chapter5_policy.get("structure_mode") != "module-subfunctions-with-inline-code":
+        return True
+    chapter5_required_assets = chapter_required_assets(profile, "05-系统实现.md")
+    expected_chapter5_test_screenshots = len(_chapter5_screenshot_requirements(profile.get("core_modules", [])))
+    current_chapter5_test_screenshots = sum(
+        1
+        for asset in chapter5_required_assets
+        if asset.get("asset_type") == "figures" and asset.get("kind") == "test-screenshot"
+    )
+    if current_chapter5_test_screenshots != expected_chapter5_test_screenshots:
         return True
     if any(not module.get("subfunctions") for module in profile.get("core_modules", [])):
         return True
@@ -944,33 +955,40 @@ def _resolve_chapter_assets(
     issues: list[str] = []
 
     def add_asset(asset: dict[str, Any], requirement: dict[str, Any], required_flag: bool) -> None:
-        asset_id = asset.get("id", "")
+        selected_asset = dict(asset)
+        workspace_image_path = chapter5_test_screenshot_workspace_relpath(selected_asset)
+        if workspace_image_path:
+            selected_asset["workspace_image_path"] = workspace_image_path
+        asset_id = selected_asset.get("id", "")
         if asset_id and asset_id not in selected_ids:
-            selected_assets.append(asset)
+            selected_assets.append(selected_asset)
             selected_ids.add(asset_id)
         asset_to_section_map.append(
             {
-                "asset_id": asset.get("id", ""),
-                "asset_type": asset.get("asset_type", ""),
-                "title": asset.get("title", ""),
+                "asset_id": selected_asset.get("id", ""),
+                "asset_type": selected_asset.get("asset_type", ""),
+                "title": selected_asset.get("title", ""),
+                "source_path": selected_asset.get("source_path", ""),
+                "workspace_image_path": selected_asset.get("workspace_image_path", ""),
+                "selection_group": selected_asset.get("selection_group", ""),
                 "target_section": requirement.get("section", ""),
                 "required": required_flag,
-                "evidence_level": asset.get("evidence_level", "unknown"),
+                "evidence_level": selected_asset.get("evidence_level", "unknown"),
             }
         )
-        if asset.get("asset_type") == "tables":
+        if selected_asset.get("asset_type") == "tables":
             table_specs.append(
                 {
-                    "title": asset.get("title", ""),
-                    "kind": asset.get("kind", ""),
-                    "headers": asset.get("table_headers", []),
-                    "rows": asset.get("table_rows", []),
-                    "source_path": asset.get("source_path", ""),
-                    "placeholder_text": asset.get("placeholder_text", ""),
+                    "title": selected_asset.get("title", ""),
+                    "kind": selected_asset.get("kind", ""),
+                    "headers": selected_asset.get("table_headers", []),
+                    "rows": selected_asset.get("table_rows", []),
+                    "source_path": selected_asset.get("source_path", ""),
+                    "placeholder_text": selected_asset.get("placeholder_text", ""),
                 }
             )
-        if asset.get("asset_type") == "appendix_items":
-            appendix_titles.append(asset.get("title", ""))
+        if selected_asset.get("asset_type") == "appendix_items":
+            appendix_titles.append(selected_asset.get("title", ""))
 
     for requirement in required:
         matches = [asset for asset in available_assets if _asset_matches_requirement(asset, requirement, chapter)]
@@ -2029,6 +2047,7 @@ def _brief_style_rules(chapter: str, research_contract: dict[str, Any]) -> list[
                 "每个子功能小节都必须同时出现“后端实现。”和“前端实现。”两段，顺序固定为后端在前、前端在后。",
                 "后端段落应落到接口、服务编排、角色校验、数据库写入和链上协同；前端段落应落到页面入口、表单/列表交互、状态反馈和路由跳转。",
                 "优先直接嵌入工作区已抽取的真实代码片段；若存在真实页面截图，应放在对应前端实现段落之后。",
+                "chapter packet 已选中的 `test-screenshot` 不得省略；若同一前端小节分配到多张真实页面图，应连续嵌入该小节的前端段落之后，再接代码证据。",
                 "只能使用已抽取到工作区的真实代码证据与页面截图，不得自造代码块。",
             ]
         )
@@ -2108,6 +2127,25 @@ def _render_chapter_brief_md(packet: dict[str, Any], debug_packet_md_rel_path: s
         ]
         or ["- none"]
     )
+    screenshot_entries = [
+        item for item in packet.get("asset_to_section_map", []) if item.get("workspace_image_path")
+    ]
+    if screenshot_entries:
+        lines.extend(
+            [
+                "",
+                "## 页面截图落点",
+                "",
+            ]
+        )
+        lines.extend(
+            [
+                f"- {item['title']} -> {item['target_section']} | source=`{item.get('source_path', '') or '-'}`"
+                f" | workspace=`{item.get('workspace_image_path', '')}`"
+                f" | selection_group=`{item.get('selection_group', '') or '-'}`"
+                for item in screenshot_entries
+            ]
+        )
     lines.extend(
         [
             "",
@@ -2345,10 +2383,31 @@ def _render_chapter_packet_md(packet: dict[str, Any]) -> str:
             *(
                 [
                     f"- [{item['asset_type']}] {item['title']} -> {item['target_section']} | required={item['required']} | evidence={item['evidence_level']}"
+                    f" | source={item.get('source_path', '') or '-'}"
+                    f" | workspace={item.get('workspace_image_path', '') or '-'}"
+                    f" | selection_group={item.get('selection_group', '') or '-'}"
                     for item in packet["asset_to_section_map"]
                 ]
                 or ["- none"]
             ),
+            "",
+            "### Staged Page Screenshots",
+            "",
+        ]
+    )
+    lines.extend(
+        [
+            f"- {item.get('title', '') or '-'} | source={item.get('source_path', '') or '-'}"
+            f" | workspace={item.get('workspace_path', '') or '-'}"
+            f" | selection_group={item.get('selection_group', '') or '-'}"
+            f" | name_source={item.get('name_source', '') or '-'}"
+            f" | status={item.get('status', '') or '-'}"
+            for item in packet.get("staged_page_screenshots", [])
+        ]
+        or ["- none"]
+    )
+    lines.extend(
+        [
             "",
             "### Table Specs",
             "",
@@ -2607,6 +2666,11 @@ def run_prepare_chapter(config_path: Path, chapter: str) -> dict[str, Path]:
         _relative_to_workspace(writing_paths["research_dir"], workspace_root),
         _relative_to_workspace(writing_paths["research_skill_path"], workspace_root),
         _relative_to_workspace(writing_paths["paper_reader_skill_path"], workspace_root),
+    )
+    packet["staged_page_screenshots"] = stage_chapter5_test_screenshots(
+        workspace_root,
+        Path(manifest["project_root"]).resolve(),
+        packet.get("chapter_assets", []),
     )
     packet_json_path = workspace_root / queue_entry["packet_json"]
     packet_md_path = workspace_root / queue_entry["packet_md"]

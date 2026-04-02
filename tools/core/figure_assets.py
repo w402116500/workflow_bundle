@@ -12,7 +12,8 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
-from core.project_common import load_workspace_context, make_relative, material_output_paths, write_json
+from core.page_screenshot_assets import stage_chapter5_test_screenshots
+from core.project_common import load_workspace_context, make_relative, material_output_paths, read_json, write_json
 
 
 MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)\n```", re.S)
@@ -415,6 +416,14 @@ def _now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def _load_chapter5_packet_assets(workspace_root: Path) -> list[dict[str, Any]]:
+    packet_path = workspace_root / "docs" / "writing" / "chapter_packets" / "05-系统实现.json"
+    if not packet_path.exists():
+        return []
+    packet = read_json(packet_path)
+    return list(packet.get("chapter_assets", []))
+
+
 def run_prepare_figures(config_path: Path) -> dict[str, Any]:
     context = load_workspace_context(config_path)
     config = context["config"]
@@ -461,6 +470,12 @@ def run_prepare_figures(config_path: Path) -> dict[str, Any]:
             }
         )
 
+    staged_chapter5_screenshots = stage_chapter5_test_screenshots(
+        workspace_root,
+        Path(manifest["project_root"]).resolve(),
+        _load_chapter5_packet_assets(workspace_root),
+    )
+
     config["figure_map"] = figure_map
     write_json(context["config_path"], config)
 
@@ -471,6 +486,7 @@ def run_prepare_figures(config_path: Path) -> dict[str, Any]:
         "config_path": str(context["config_path"]),
         "diagram_dir": str(diagram_dir),
         "generated_figures": generated,
+        "staged_chapter5_screenshots": staged_chapter5_screenshots,
     }
     write_json(output_dir / "figure_prepare_summary.json", figure_prepare_summary)
 
@@ -479,6 +495,7 @@ def run_prepare_figures(config_path: Path) -> dict[str, Any]:
         "config_path": str(context["config_path"]),
         "diagram_dir": str(diagram_dir),
         "generated_figures": generated,
+        "staged_chapter5_screenshots": staged_chapter5_screenshots,
         "material_pack_json": str(materials["material_pack_json"]),
         "figure_prepare_summary_json": str(output_dir / "figure_prepare_summary.json"),
     }
