@@ -43,6 +43,9 @@
    - `python3 workflow_bundle/tools/cli.py release-verify --config <workspace-dir>/workflow/configs/workspace.json`
    - 如需兼容旧脚本，`build_release.sh` 与 `verify_release.sh` 仍可使用，但它们只是 CLI 发布链的薄封装
    - Windows `postprocess_release.sh` 会把终稿写到 `final/`，并生成 `final_summary.json`
+11. 如果本轮修改的是 workflow 工具、workflow 技能或 workflow 文档，而不是正文章节：
+   - `python3 workflow_bundle/tools/cli.py selftest`
+   - 如需同时覆盖真实工作区发布链：`python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace-dir>/workflow/configs/workspace.json>`
 
 ## 推荐章节顺序
 
@@ -84,6 +87,7 @@
 - 同一 workspace 的变更型命令会写入 `docs/workflow/workspace.lock.json`；检测到活动锁时不要并发继续写作
 - `08-致谢.md` 不走自动写章，人工补写后才允许标 `reviewed`
 - `REFERENCES.md` 不能当普通章节执行或 finalize
+- workflow 侧变更合入前，至少执行一次 `selftest`
 
 ## 输入材料
 

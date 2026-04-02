@@ -14,6 +14,7 @@ ROOT_COMPAT_SH_WRAPPERS=(
   "workflow/scripts/check_workspace.sh|workflow_bundle/workflow/scripts/check_workspace.sh"
   "workflow/scripts/compare_versions.sh|workflow_bundle/workflow/scripts/compare_versions.sh"
   "workflow/scripts/build_release.sh|workflow_bundle/workflow/scripts/build_release.sh"
+  "workflow/scripts/selftest.sh|workflow_bundle/workflow/scripts/selftest.sh"
   "workflow/scripts/postprocess_release.sh|workflow_bundle/workflow/scripts/postprocess_release.sh"
   "workflow/scripts/postprocess_release_linux.sh|workflow_bundle/workflow/scripts/postprocess_release_linux.sh"
   "workflow/scripts/verify_release.sh|workflow_bundle/workflow/scripts/verify_release.sh"

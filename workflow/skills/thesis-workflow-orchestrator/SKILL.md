@@ -56,6 +56,7 @@ This skill is the top-level execution contract for new AI conversations inside t
 - If phase is `content-reviewed`, build and verify the Linux release before discussing final delivery.
 - The preferred Linux release commands are `release-preflight`, `release-build`, and `release-verify` from `workflow_bundle/tools/cli.py`.
 - If phase is `linux-release-ready`, keep the result classified as Linux delivery artifact unless Windows finalization actually ran.
+- If the task is workflow maintenance on `workflow_bundle/` itself rather than continuing one workspace, validate the changed bundle with `python3 workflow_bundle/tools/cli.py selftest` before closing the task.
 
 ## Chapter Constraints
 
@@ -70,6 +71,7 @@ This skill is the top-level execution contract for new AI conversations inside t
 - After a successful mutating command, ensure handoff and execution log are refreshed through the CLI.
 - Do not run parallel mutating commands against the same workspace.
 - If a stale lock exists, clear it explicitly with `clear-lock --force`; do not bypass it by writing files manually.
+- For workflow-bundle changes, prefer `selftest` over ad hoc spot checks so fixture cold-start and Linux release paths are both re-validated.
 
 ## Output Style
 

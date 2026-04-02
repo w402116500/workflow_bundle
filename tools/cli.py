@@ -29,6 +29,7 @@ from core.runtime_state import (
     sync_workspace_workflow_assets,
 )
 from core.scaffold import run_scaffold
+from core.selftest import run_selftest
 from core.verify_citation_links import verify_citation_links
 from core.workspace_checks import run_workspace_check
 from core.writing import (
@@ -283,6 +284,7 @@ def _build_parser() -> argparse.ArgumentParser:
     literature_parser.add_argument("--config", type=Path)
     literature_parser.add_argument("--min-refs", type=int, default=15)
     literature_parser.add_argument("--max-refs", type=int, default=18)
+    literature_parser.add_argument("--skip-research-sidecar", action="store_true")
 
     prepare_outline_parser = subparsers.add_parser("prepare-outline", help="Generate and lock the thesis outline before drafting.")
     prepare_outline_parser.add_argument("--config", type=Path)
@@ -363,6 +365,13 @@ def _build_parser() -> argparse.ArgumentParser:
     smoke_intake_parser.add_argument("--out", type=Path, required=True)
     smoke_intake_parser.add_argument("--discipline", default="计算机类")
     smoke_intake_parser.add_argument("--chain", choices=["auto", "fisco", "fabric"], default="auto")
+    smoke_intake_parser.add_argument("--min-refs", type=int, default=15)
+    smoke_intake_parser.add_argument("--max-refs", type=int, default=18)
+    smoke_intake_parser.add_argument("--skip-research-sidecar", action="store_true")
+
+    selftest_parser = subparsers.add_parser("selftest", help="Run bundled workflow regression checks against the fixture and optionally a real workspace.")
+    selftest_parser.add_argument("--workspace-config", type=Path)
+    selftest_parser.add_argument("--out-root", type=Path)
 
     return parser
 
@@ -566,7 +575,9 @@ def main(argv: list[str] | None = None) -> int:
         result = _run_with_workspace_lock(
             config_path,
             "literature",
-            lambda: (lambda inner: (_record_workspace_state(config_path, "literature", inner), inner)[1])(run_literature(config_path, args.min_refs, args.max_refs)),
+            lambda: (
+                lambda inner: (_record_workspace_state(config_path, "literature", inner), inner)[1]
+            )(run_literature(config_path, args.min_refs, args.max_refs, enable_research_sidecar=not args.skip_research_sidecar)),
         )
         print(f"literature_pack_json: {result['literature_pack_json']}")
         print(f"literature_pack_md: {result['literature_pack_md']}")
@@ -831,13 +842,23 @@ def main(argv: list[str] | None = None) -> int:
             ["extract-code", "--config", str(config_path)],
             ["extract", "--config", str(config_path)],
             ["scaffold", "--config", str(config_path)],
-            ["literature", "--config", str(config_path)],
+            [
+                "literature",
+                "--config",
+                str(config_path),
+                "--min-refs",
+                str(args.min_refs),
+                "--max-refs",
+                str(args.max_refs),
+            ],
             ["prepare-outline", "--config", str(config_path)],
             ["prepare-writing", "--config", str(config_path)],
             ["set-active-workspace", "--config", str(config_path)],
             ["resume", "--config", str(config_path)],
             ["check-workspace", "--config", str(config_path)],
         ]
+        if args.skip_research_sidecar:
+            smoke_steps[3].append("--skip-research-sidecar")
         for subcmd in smoke_steps:
             completed = subprocess.run(
                 [sys.executable, str(cli_path), *subcmd],
@@ -852,6 +873,25 @@ def main(argv: list[str] | None = None) -> int:
                     print(completed.stderr.rstrip(), file=sys.stderr)
                 return completed.returncode
         return 0
+
+    if args.command == "selftest":
+        result = run_selftest(args.workspace_config, args.out_root)
+        print(f"out_root: {result['out_root']}")
+        print(f"summary_json: {result['summary_json']}")
+        fixture = result.get("fixture") or {}
+        print(f"fixture_status: {fixture.get('status', 1)}")
+        if fixture.get("workspace_root"):
+            print(f"fixture_workspace_root: {fixture['workspace_root']}")
+        workspace = result.get("workspace") or {}
+        if workspace:
+            print(f"workspace_status: {workspace.get('status', 1)}")
+            if workspace.get("config_path"):
+                print(f"workspace_config: {workspace['config_path']}")
+            if workspace.get("docx_path"):
+                print(f"workspace_docx: {workspace['docx_path']}")
+        if result.get("error"):
+            print(result["error"], file=sys.stderr)
+        return int(result.get("status", 1))
 
     parser.error(f"unsupported command: {args.command}")
     return 2

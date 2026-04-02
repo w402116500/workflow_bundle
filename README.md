@@ -28,8 +28,9 @@
 4. `workflow/THESIS_WORKFLOW.md`
 5. `workflow/CHAPTER_EXECUTION.md`
 6. `workflow/references/command-map.md`
-7. `docs/current_workflow_status_audit_2026-03-31.md`
-8. `docs/workflow_optimization_log.md`
+7. `workflow/09-testing-and-regression.md`
+8. `docs/current_workflow_status_audit_2026-03-31.md`
+9. `docs/workflow_optimization_log.md`
 
 ## 正式入口
 
@@ -45,6 +46,8 @@
 - `python3 workflow_bundle/tools/cli.py release-preflight --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py release-build --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>`
+- `python3 workflow_bundle/tools/cli.py selftest`
+- `python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`
 - `bash workflow_bundle/workflow/scripts/check_bundle_sync.sh`
 - `bash workflow_bundle/workflow/scripts/sync_root_compat.sh`
 - `bash workflow_bundle/workflow/scripts/release_preflight.sh <workspace.json>`
@@ -67,6 +70,7 @@
 - `python3 workflow_bundle/tools/cli.py release-preflight` 是官方发布前检查入口；`workflow/scripts/release_preflight.sh` 只是对应的 shell 转发层
 - `python3 workflow_bundle/tools/cli.py release-build` 是官方 Linux 发布构建入口，会顺序执行 `release-preflight -> prepare-figures -> build -> write-build-summary`
 - `python3 workflow_bundle/tools/cli.py release-verify` 是官方 Linux 发布校验入口，会顺序执行 `release-preflight -> prepare-figures -> build -> verify -> write-release-summary`
+- `python3 workflow_bundle/tools/cli.py selftest` 是官方本地回归入口；默认执行 bundle 自带 fixture 冷启动回归，传入 `--workspace-config` 后会追加真实 workspace 的 Linux 发布回归
 - `python3 workflow_bundle/tools/cli.py sync-workflow-assets` 用于把 workspace 本地 `workflow/*.md` 与 `workflow/skills/*` 同步到当前 bundle 版本；当 `workflow_signature_status=drifted` 时应先执行它
 - `check_workspace.sh` 现在保留为兼容别名，内部直接转发到 `release_preflight.sh`
 - `build_release.sh` 与 `verify_release.sh` 现在也只是对应 `release-build` 与 `release-verify` 的 shell 转发层
@@ -110,3 +114,17 @@
 - `workflow/fixtures/fabric_trace_demo/`
 
 它用于验证新 workspace 的 intake -> prepare-writing 冷启动链，而不是作为正文实例。
+
+## 回归测试
+
+推荐的本地回归入口：
+
+- `python3 workflow_bundle/tools/cli.py selftest`
+- `python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`
+- `bash workflow_bundle/workflow/scripts/selftest.sh`
+
+说明：
+
+- 默认 `selftest` 只运行 bundle 内 fixture，并把测试输出写到系统临时目录
+- 传入 `--workspace-config` 后，会追加真实 workspace 的 `release-preflight -> release-build -> release-verify` 回归
+- 对真实 workspace 的回归不会自动修复 `drifted` 或活动锁；这两类状态会直接失败并给出修复命令

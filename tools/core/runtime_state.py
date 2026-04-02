@@ -38,6 +38,7 @@ MANAGED_WORKFLOW_DOCS = [
     "06-ai-prompt-guide.md",
     "07-current-project-execution-checklist.md",
     "08-dual-platform-release.md",
+    "09-testing-and-regression.md",
     "CHAPTER_EXECUTION.md",
     "MIGRATION.md",
     "THESIS_WORKFLOW.md",
@@ -115,6 +116,9 @@ def _render_workspace_workflow_readme(ctx: dict[str, Any]) -> str:
         f"- `python3 {cli_path} release-build --config {config_path}`",
         f"- `python3 {cli_path} release-verify --config {config_path}`",
         "",
+        "Recommended workflow regression command:",
+        f"- `python3 {cli_path} selftest --workspace-config {config_path}`",
+        "",
         "Source of truth:",
         "- thesis: `polished_v3/`",
         "- workflow state: `docs/workflow/` and `docs/writing/`",
@@ -139,6 +143,27 @@ def _managed_workflow_doc_targets(workspace_root: Path) -> list[Path]:
 
 def _managed_workflow_skill_targets(workspace_root: Path) -> list[Path]:
     return [workspace_root / "workflow" / "skills" / name for name in MANAGED_WORKFLOW_SKILLS]
+
+
+def _iter_managed_signature_entries(ctx: dict[str, Any]) -> list[tuple[str, bytes]]:
+    entries: list[tuple[str, bytes]] = []
+    source_workflow_root = PRIMARY_WORKFLOW_ROOT / "workflow"
+
+    entries.append(("workflow/README.md", _render_workspace_workflow_readme(ctx).encode("utf-8")))
+
+    for relative in MANAGED_WORKFLOW_DOCS:
+        source_path = source_workflow_root / relative
+        entries.append((f"workflow/{relative}", source_path.read_bytes()))
+
+    for skill_name in MANAGED_WORKFLOW_SKILLS:
+        source_dir = source_workflow_root / "skills" / skill_name
+        for path in sorted(source_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(PRIMARY_WORKFLOW_ROOT).as_posix()
+            entries.append((relative, path.read_bytes()))
+
+    return entries
 
 
 def sync_workspace_workflow_assets(config_path: Path | None = None) -> dict[str, Any]:
@@ -172,7 +197,7 @@ def sync_workspace_workflow_assets(config_path: Path | None = None) -> dict[str,
         shutil.copytree(source_dir, target_dir)
         synced_items.append(str(target_dir.relative_to(workspace_root)))
 
-    bundle_signature = compute_bundle_signature()
+    bundle_signature = compute_bundle_signature(ctx)
     state_payload = {
         "synced_at": _now_iso(),
         "bundle_signature": bundle_signature,
@@ -194,27 +219,11 @@ def sync_workspace_workflow_assets(config_path: Path | None = None) -> dict[str,
     }
 
 
-def compute_bundle_signature() -> str:
+def compute_bundle_signature(ctx: dict[str, Any]) -> str:
     hasher = hashlib.sha1()
-    scan_roots = [
-        PRIMARY_WORKFLOW_ROOT / "workflow",
-        PRIMARY_WORKFLOW_ROOT / "tools",
-        PRIMARY_WORKFLOW_ROOT / "paper-research-agent",
-        PRIMARY_WORKFLOW_ROOT / "paper-reader",
-    ]
-    for root in scan_roots:
-        if not root.exists():
-            continue
-        for path in sorted(root.rglob("*")):
-            if not path.is_file():
-                continue
-            if "__pycache__" in path.parts or path.suffix == ".pyc":
-                continue
-            relative = path.relative_to(PRIMARY_WORKFLOW_ROOT)
-            stat = path.stat()
-            hasher.update(str(relative).encode("utf-8"))
-            hasher.update(str(stat.st_size).encode("utf-8"))
-            hasher.update(str(int(stat.st_mtime)).encode("utf-8"))
+    for relative, payload in _iter_managed_signature_entries(ctx):
+        hasher.update(relative.encode("utf-8"))
+        hasher.update(hashlib.sha1(payload).hexdigest().encode("ascii"))
     return hasher.hexdigest()[:12]
 
 
@@ -286,7 +295,7 @@ def workflow_signature_status(config_path: Path | None = None) -> dict[str, Any]
     state_paths = workflow_state_paths(ctx["config"], ctx["workspace_root"])
     workflow_assets_state = _read_optional_json(state_paths["workflow_assets_state_json"])
     recorded_signature = str(workflow_assets_state.get("bundle_signature", "") or "")
-    current_signature = compute_bundle_signature()
+    current_signature = compute_bundle_signature(ctx)
     synced_items = [str(item) for item in workflow_assets_state.get("synced_items", []) if str(item).strip()]
     missing_items = [item for item in synced_items if not (ctx["workspace_root"] / item).exists()]
     status = _signature_status(recorded_signature, current_signature)

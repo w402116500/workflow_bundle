@@ -48,6 +48,7 @@ If no active workspace is configured, do not guess. Ask the user for the target 
 - If a chapter is `drafted`, invoke `academic-paper-crafter` before finalizing to `polished`.
 - If a chapter is `polished`, review and finalize to `reviewed`.
 - If all chapters are reviewed and the Linux release is stale or missing, rebuild and verify it with `release-build` and `release-verify` before any further polishing discussion.
+- If the request is to validate workflow-bundle changes rather than continue one chapter, prefer `python3 workflow_bundle/tools/cli.py selftest` and only drop to ad hoc commands when diagnosing a failing stage.
 
 ## Chapter Constraints
 

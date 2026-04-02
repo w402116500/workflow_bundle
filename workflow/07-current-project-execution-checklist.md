@@ -37,6 +37,9 @@
    - `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>`
    - `bash workflow_bundle/workflow/scripts/verify_release.sh`
    - shell wrapper 只是兼容入口，官方校验链以 `release-verify` 为准
+7. 若本轮修改的是 workflow 自身
+   - `python3 workflow_bundle/tools/cli.py selftest`
+   - 如需同时覆盖真实工作区：`python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`
 
 ## 当前实例的重要事实
 

@@ -7,6 +7,8 @@
   - 若输出 `workflow_signature_status: drifted`：`python3 workflow_bundle/tools/cli.py sync-workflow-assets --config <workspace.json>`
   - 如需刷新 handoff：`python3 workflow_bundle/tools/cli.py refresh-handoff --config <workspace.json>`
   - 进入发布链路：`python3 workflow_bundle/tools/cli.py release-preflight --config <workspace.json>` -> `python3 workflow_bundle/tools/cli.py release-build --config <workspace.json>` -> `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>`
+  - 回归当前 bundle：`python3 workflow_bundle/tools/cli.py selftest`
+  - 回归 bundle + 真实 workspace：`python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`
 - 设置当前活动工作区
   - `python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace.json>`
 - 解析当前活动工作区
@@ -32,6 +34,9 @@
   - `python3 workflow_bundle/tools/cli.py check-workspace --config <workspace.json>`
 - 对比草稿与正文
   - `bash workflow_bundle/workflow/scripts/compare_versions.sh`
+- 工作流回归
+  - `python3 workflow_bundle/tools/cli.py selftest`
+  - `bash workflow_bundle/workflow/scripts/selftest.sh`
 - 构建发布稿
   - `python3 workflow_bundle/tools/cli.py release-build --config <workspace.json>`
   - `bash workflow_bundle/workflow/scripts/build_release.sh`
@@ -67,6 +72,7 @@
 - `python3 workflow_bundle/tools/cli.py release-preflight --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py release-build --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>`
+- `python3 workflow_bundle/tools/cli.py selftest`
 - `python3 workflow_bundle/tools/cli.py prepare-figures --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py postprocess --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py write-build-summary --config <workspace.json> --docx <docx-path>`
@@ -97,4 +103,4 @@
 
 - `workflow_signature_status` 以 workspace 本地 `docs/workflow/workflow_assets_state.json` 为准，不再以 handoff 更新时间代替同步状态。
 - `refresh-handoff` 只刷新 handoff 快照，不会把 `workflow_signature_status: drifted` 自动改回 `current`。
-- `build_release.sh`、`verify_release.sh`、`check_workspace.sh` 仍可继续使用，但它们现在都是 CLI 官方入口的兼容包装层。
+- `build_release.sh`、`verify_release.sh`、`check_workspace.sh`、`selftest.sh` 仍可继续使用，但它们现在都是 CLI 官方入口的兼容包装层。

@@ -43,6 +43,9 @@
    - 如果 AI 修改的是 workflow 工具或 workflow 文档，而不是论文正文，应把操作写入：
      - `docs/workflow_optimization_log.md`
      - `workflow_bundle/docs/workflow_optimization_log.md`
+10. 明确 workflow 回归约束。
+   - 如果 AI 修改的是 `workflow_bundle/` 下的工具、技能、脚本或工作流文档，结束前应运行 `python3 workflow_bundle/tools/cli.py selftest`。
+   - 如需同时覆盖真实 workspace 发布链，再运行 `python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`。
 
 ## 3. 提示前你最好准备好的信息
 
@@ -178,6 +181,23 @@ problem: <用一句话描述问题>
 3. 先根据 handoff、chapter_queue、release summary 和相关 workflow 文档定位问题，不要直接重写正文。
 4. 如果需要修改 workflow 工具或 workflow 文档，把每一步操作写入 docs/workflow_optimization_log.md 和 workflow_bundle/docs/workflow_optimization_log.md。
 5. 修复后重新验证相关命令，并汇报结果。
+```
+
+### 4.7 运行 workflow 自测
+
+适合你刚修改了 workflow 工具、skill、脚本或执行文档，想让新的 AI 对话直接帮你跑回归。
+
+```text
+请运行这套 thesis workflow 的本地回归，不要改正文：
+
+workspace_config: <可选，绝对路径/workspace.json>
+
+要求：
+1. 以 workflow_bundle/tools/cli.py 作为正式入口。
+2. 至少执行 python3 workflow_bundle/tools/cli.py selftest。
+3. 如果给了 workspace_config，再执行 python3 workflow_bundle/tools/cli.py selftest --workspace-config <绝对路径/workspace.json>。
+4. 汇报 selftest_summary.json 路径、fixture 阶段结果、workspace 阶段结果。
+5. 如果失败，明确是哪一步失败、对应日志文件在哪、下一条修复命令是什么。
 ```
 
 ## 5. 最短可用提示

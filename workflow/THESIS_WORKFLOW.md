@@ -137,6 +137,19 @@ CLI：
 
 然后再继续读取 workspace 本地 skill 和执行文档。
 
+### 2.7 工作流回归
+
+如果本轮修改的是 `workflow_bundle/` 下的工具、技能、脚本或工作流文档，不应只靠手工 spot check。推荐直接执行：
+
+- `python3 workflow_bundle/tools/cli.py selftest`
+- `python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`
+
+其中：
+
+- 默认 `selftest` 只覆盖 bundle 自带 fixture 的冷启动链
+- 传入 `--workspace-config` 后会追加真实 workspace 的 Linux 发布回归
+- `selftest` 不会自动修复 `workflow_signature_status: drifted` 或活动锁；这两种状态会被直接报错出来
+
 ## 3. 当前示例实例的源与产物边界
 
 - 正文真源：`polished_v3/`

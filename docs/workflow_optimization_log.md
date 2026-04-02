@@ -3842,3 +3842,29 @@
   - Validation passed:
     - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v9.docx`
     - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v9.docx`
+
+### Step 191
+- Action: Finished the workflow-maintenance round by adding a bundled `selftest` regression entrypoint, fixing the workflow-signature false-drift bug, syncing the Teatrace workspace assets again, and rerunning the full Linux regression path.
+- Purpose: Ensure later AI conversations can verify the workflow itself rather than only reusing the current Teatrace outputs, and make `sync-workflow-assets` / `workflow_signature_status` consistent after bundle-side maintenance changes.
+- Result:
+  - Workflow bundle changes:
+    - added regression entrypoints `workflow_bundle/tools/core/selftest.py` and `workflow_bundle/workflow/scripts/selftest.sh`
+    - documented the regression path in workflow docs, command map, AI prompt guide, execution checklist, and skills
+    - added lightweight literature regression support so fixture selftests can run with `--min-refs 1 --max-refs 1 --skip-research-sidecar`
+    - fixed `tools/core/runtime_state.py` so `bundle_signature` is now computed from the exact managed workflow assets that are synced into each workspace: rendered `workflow/README.md`, managed workflow docs, and managed workflow skills
+    - this removes the previous false-positive case where changing bundle `tools/` code made the workspace look drifted immediately even after a fresh `sync-workflow-assets`
+  - Teatrace workspace verification:
+    - refreshed workspace assets and recorded the new signature `c0817716505e`
+    - full regression passed with summary `/tmp/workflow_bundle_selftest_lo2rk52k/selftest_summary.json`
+    - generated regression DOCX `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/selftest_release.docx`
+    - release verification stayed clean with `anchors missing bookmarks: 0`, `ref fields: 8`, and `bookmarks: 8`
+    - Chapter 5 inline code-screenshot captions remained removed in the exported DOCX while normal numbered figure captions were still preserved
+    - workspace lock ended as `unlocked`
+    - reset the default active workspace pointer back to `/home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json` so new conversations resume from the real project instead of an old temporary fixture workspace
+  - Validation passed:
+    - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/cli.py /home/ub/thesis_materials/workflow_bundle/tools/core/selftest.py /home/ub/thesis_materials/workflow_bundle/tools/core/runtime_state.py /home/ub/thesis_materials/workflow_bundle/tools/core/writing.py`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+    - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py selftest --workspace-config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py set-active-workspace --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`

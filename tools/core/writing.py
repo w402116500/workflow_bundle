@@ -679,7 +679,12 @@ def _build_reference_registry(entries: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def run_literature(config_path: Path, min_refs: int = 15, max_refs: int = 18) -> dict[str, Path]:
+def run_literature(
+    config_path: Path,
+    min_refs: int = 15,
+    max_refs: int = 18,
+    enable_research_sidecar: bool = True,
+) -> dict[str, Path]:
     ctx = load_workspace_context(config_path)
     workspace_root = ctx["workspace_root"]
     manifest = ctx["manifest"]
@@ -689,35 +694,45 @@ def run_literature(config_path: Path, min_refs: int = 15, max_refs: int = 18) ->
     queries = _generate_queries(manifest, material_pack)
     collected: list[dict[str, Any]] = []
     errors: list[str] = []
+    rows_per_query = max(1, min(max_refs, 8))
     for query in queries:
         try:
-            collected.extend(_crossref_search(query, rows=8))
+            collected.extend(_crossref_search(query, rows=rows_per_query))
         except Exception as exc:
             errors.append(f"{query}: {exc}")
         if len(_dedupe_references(collected)) >= max_refs:
             break
 
     entries = _dedupe_references(collected)
-    research_summary = run_research_sidecar(
-        queries=queries,
-        research_dir=output_paths["research_dir"],
-        max_papers=min(max_refs, 10),
-        reader_script_rel="workflow/skills/paper-reader/scripts/read_paper.py",
-        standards_rel="workflow/skills/paper-research-agent/references/analysis_standards.md",
-    )
-    research_index = build_research_index(
-        summary=research_summary,
-        research_dir=output_paths["research_dir"],
-        research_index_json=output_paths["research_index_json"],
-        research_index_md=output_paths["research_index_md"],
-    )
-    if research_index.get("status") == "failed" and entries:
+    if enable_research_sidecar:
+        research_summary = run_research_sidecar(
+            queries=queries,
+            research_dir=output_paths["research_dir"],
+            max_papers=min(max_refs, 10),
+            reader_script_rel="workflow/skills/paper-reader/scripts/read_paper.py",
+            standards_rel="workflow/skills/paper-research-agent/references/analysis_standards.md",
+        )
+        research_index = build_research_index(
+            summary=research_summary,
+            research_dir=output_paths["research_dir"],
+            research_index_json=output_paths["research_index_json"],
+            research_index_md=output_paths["research_index_md"],
+        )
+        if research_index.get("status") == "failed" and entries:
+            research_index = build_registry_fallback_index(
+                registry_entries=sorted(entries, key=lambda item: (item.get("year", 0), item.get("title", "")), reverse=True),
+                research_dir=output_paths["research_dir"],
+                research_index_json=output_paths["research_index_json"],
+                research_index_md=output_paths["research_index_md"],
+                base_errors=research_index.get("errors", []),
+            )
+    else:
         research_index = build_registry_fallback_index(
             registry_entries=sorted(entries, key=lambda item: (item.get("year", 0), item.get("title", "")), reverse=True),
             research_dir=output_paths["research_dir"],
             research_index_json=output_paths["research_index_json"],
             research_index_md=output_paths["research_index_md"],
-            base_errors=research_index.get("errors", []),
+            base_errors=["research sidecar skipped by caller"],
         )
     if len(entries) < min_refs:
         entries.extend(research_papers_to_registry_entries(research_index.get("papers", []), _extract_theme_keywords))
