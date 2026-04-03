@@ -74,6 +74,22 @@
     "keywords_cn": "请替换为中文关键词",
     "keywords_en": "replace with english keywords"
   },
+  "image_generation": {
+    "enabled": false,
+    "provider": "zetatechs-gemini",
+    "base_url": "https://api.zetatechs.com",
+    "api_key_env": "NEWAPI_API_KEY",
+    "default_model": "gemini-3.1-flash-image-preview",
+    "default_quality": "high",
+    "default_size": "1536x1024",
+    "response_format": "b64_json",
+    "gemini_image_size": "1K",
+    "gemini_response_modalities": ["IMAGE", "TEXT"],
+    "timeout_sec": 300,
+    "output_dir": "docs/images/generated_ai",
+    "auto_generate_on_prepare_figures": false
+  },
+  "ai_figure_specs": {},
   "figure_map": {
     "4.1": {
       "caption": "图4.1 系统总体架构图",

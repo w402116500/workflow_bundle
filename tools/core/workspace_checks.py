@@ -4,6 +4,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from core.ai_image_generation import ai_override_blocking_entries
 from core.project_common import load_workspace_context, read_json, writing_output_paths
 
 
@@ -66,6 +67,7 @@ def run_workspace_check(config_path: Path) -> dict[str, Any]:
     citation_order_entries: list[dict[str, Any]] = []
     citation_reuse_entries: list[dict[str, Any]] = []
     citation_sentence_entries: list[dict[str, Any]] = []
+    ai_figure_blocking_entries = ai_override_blocking_entries(cfg_path)
 
     if checks["chapter_queue_json"].exists():
         queue = read_json(checks["chapter_queue_json"])
@@ -172,6 +174,14 @@ def run_workspace_check(config_path: Path) -> dict[str, Any]:
     else:
         lines.extend(["", "Blocking packet sync issues:", "  - none"])
 
+    if ai_figure_blocking_entries:
+        status = 1
+        lines.extend(["", "Blocking AI figure override issues:"])
+        for entry in ai_figure_blocking_entries:
+            lines.append(f"  - 图{entry['figure_no']}: missing prepared asset at {entry['expected_path']}")
+    else:
+        lines.extend(["", "Blocking AI figure override issues:", "  - none"])
+
     lines.extend(["", "Review warning summary:"])
     if style_warning_entries:
         lines.append("  style_issue_count:")
@@ -261,4 +271,5 @@ def run_workspace_check(config_path: Path) -> dict[str, Any]:
         "citation_order_entries": citation_order_entries,
         "citation_reuse_entries": citation_reuse_entries,
         "citation_sentence_entries": citation_sentence_entries,
+        "ai_figure_blocking_entries": ai_figure_blocking_entries,
     }

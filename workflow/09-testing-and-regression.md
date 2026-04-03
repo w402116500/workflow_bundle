@@ -59,6 +59,23 @@
 - 引用锚点校验结果中 `anchors missing bookmarks = 0`
 - 如果第 5 章正文引用了 `docs/materials/code_screenshots/`，导出的 Word 中不应再出现 `关键代码截图` 题注段落
 
+### 2.3 AI 插图覆盖回归
+
+仅在本轮改动涉及 `prepare-ai-figures`、`figure_map` 覆盖逻辑或 `release-preflight` 的 AI 图检查时执行。
+
+固定覆盖：
+
+- `python3 workflow_bundle/tools/cli.py prepare-ai-figures --config <workspace.json> --dry-run`
+- `python3 workflow_bundle/tools/cli.py release-preflight --config <workspace.json>`
+
+固定断言：
+
+- `prepare-ai-figures --dry-run` 可以正确读取 `image_generation` 与 `ai_figure_specs`，并生成 `ai_figure_prepare_summary.json`
+- 若某个内置图号在 `ai_figure_specs` 中声明了 `override_builtin=true`，但对应本地 PNG 尚未准备完成，`release-preflight` 必须直接失败，而不是静默回退到旧图
+- 当覆盖图已经准备完成时，后续 `prepare-figures` 必须保留 `figure_map` 中的 AI 条目，而不是重新覆盖为内置渲染结果
+- 抽查 AI PNG 时，图内不应出现图号、图题、章节标题、页眉页脚、`Fig.` / `Figure`、边缘竖排标签或其他非图主体装饰文字
+- 若某张图因为额度不足或质量不合格改回确定性生成，应验证该图号在 `figure_map` 中已切回 `renderer=mermaid` 或其他非 `ai-image` 渲染器，同时其他 AI 图号保持不变
+
 ## 3. 失败时如何解释
 
 `selftest` 不会替你自动修复以下状态，而是直接失败并给出下一条命令：
@@ -66,6 +83,7 @@
 - `workflow_signature_status: drifted`
 - workspace 活动锁未释放
 - `prepare-chapter` 或 `check-workspace` 报出 packet 阻塞项
+- AI override 图号声明了 `override_builtin=true`，但尚未通过 `prepare-ai-figures` 准备本地 PNG
 - `release-build` / `release-verify` 失败
 - DOCX 引用锚点校验失败
 - DOCX 再次回退成带“关键代码截图”题注的导出结果
@@ -94,5 +112,6 @@
 - 修改 `workflow_bundle/workflow/scripts/`
 - 修改 `workflow_bundle/workflow/skills/`
 - 修改 `workflow_bundle/workflow/*.md`
+- 修改 AI 插图配置接口、`ai_figure_specs` 使用说明或 `release-preflight` 的 AI 图约束
 
 如果本轮只改某一篇论文正文，而没有改 workflow，本文件中的回归命令不是必选项。

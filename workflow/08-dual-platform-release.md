@@ -33,6 +33,7 @@ Linux 路径适合完成：
 
 - `sync-workflow-assets` 是 Linux 发布前的工作流资产同步入口；`refresh-handoff` 不会替代它把 drifted 状态改回 current
 - `release-preflight` 是统一发布前检查入口，会先执行 compat sync 校验，再检查章节 packet 是否仍与当前论文大纲同步
+- 若 `ai_figure_specs` 对内置图号开启了 `override_builtin=true`，`release-preflight` 还会检查对应的 AI PNG 是否已经通过 `prepare-ai-figures` 显式准备完成；缺失时会直接阻断发布链路
 - `check_workspace.sh` 现在保留为 `release_preflight.sh` 的兼容别名
 - `release-build` 与 `release-verify` 在使用 workspace config 时会自动执行这一步 preflight；若存在 `stale / legacy / missing` 的 packet，同步校验会直接中止发布链路
 - `prepare-figures` 现已支持未变化图资源的缓存复用，因此重复执行 Linux 发布链路时不会再为同一张 Mermaid 图重复走网络渲染

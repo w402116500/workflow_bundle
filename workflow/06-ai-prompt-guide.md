@@ -46,6 +46,13 @@
 10. 明确 workflow 回归约束。
    - 如果 AI 修改的是 `workflow_bundle/` 下的工具、技能、脚本或工作流文档，结束前应运行 `python3 workflow_bundle/tools/cli.py selftest`。
    - 如需同时覆盖真实 workspace 发布链，再运行 `python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`。
+11. 明确 AI 插图约束。
+   - 只有场景示意图、业务流程概念图、论文插画类资源才适合使用 `prepare-ai-figures`。
+   - 若要替换 `prepare-figures` 的内置图号，必须在 `ai_figure_specs` 中为对应图号显式设置 `override_builtin=true`，并在发布前先运行一次 `prepare-ai-figures`。
+   - 当前 workflow 默认走 `zetatechs-gemini` provider；若执行环境需要回退到 OpenAI Image 兼容链，应显式把 `image_generation.provider` 改为 `zetatechs` 或 `zetatechs-openai-image`。
+   - 最好为每张 AI 图补充 `diagram_type` 和 `style_notes`，并参考 `docs/THESIS_DIAGRAMS_LIST.md` 与 `docs/images/` 中的论文技术图风格来写提示，而不是只写一句笼统的图意描述。
+   - AI 图本体只能保留图主体，不能在 PNG 内重复写图号、图题、章节名、页眉页脚、`Fig.` / `Figure` 或边缘装饰标签；题注由正文和 DOCX 排版层负责。
+   - 若某张 AI 图因额度不足、质量不稳定或不适合论文风格而失败，不要硬撑整批命令；可把该图号的 `ai_figure_specs.<fig>.enabled` 改为 `false`，再执行 `prepare-figures`，让这一张图单独回退到确定性生成。
 
 ## 3. 提示前你最好准备好的信息
 
@@ -60,6 +67,8 @@
   - 只润色
   - 只做 release
   - 修 workflow
+- 是否需要 AI 场景插图，以及对应图号、图题和意图。
+- 若某些 AI 图需要保留确定性 fallback，也应提前说明图号。
 - 是否只走 Linux 路径。
 - 是否允许 AI 修改 workflow 文档与工具代码，还是只准改 workspace 正文。
 
@@ -198,6 +207,30 @@ workspace_config: <可选，绝对路径/workspace.json>
 3. 如果给了 workspace_config，再执行 python3 workflow_bundle/tools/cli.py selftest --workspace-config <绝对路径/workspace.json>。
 4. 汇报 selftest_summary.json 路径、fixture 阶段结果、workspace 阶段结果。
 5. 如果失败，明确是哪一步失败、对应日志文件在哪、下一条修复命令是什么。
+```
+
+### 4.8 准备 AI 场景插图
+
+适合你已经确定某几张论文插图更适合通过 AI 生图生成，并希望 AI 只准备这些图，不直接修改正文。
+
+```text
+请为这个 thesis workspace 准备 AI 插图资源：
+
+workspace_config: <绝对路径/workspace.json>
+figures:
+  - figure_no: <例如 5.1>
+    caption: <图题>
+    intent: <图像意图>
+    override_builtin: <true|false>
+
+要求：
+1. 使用 workflow_bundle/tools/cli.py 作为正式入口。
+2. 先检查 workspace.json 中的 image_generation 与 ai_figure_specs 是否完整；缺字段时先补配置，再执行命令。
+3. 只把 AI 图片生成到本地 PNG，不要直接手改 markdown 中的图片路径。
+4. 先执行 python3 workflow_bundle/tools/cli.py prepare-ai-figures --config <绝对路径/workspace.json>。
+5. 如果某个图号覆盖了内置生成图，后续发布前再执行 release-preflight，确认不会因为缺少 AI PNG 被阻断。
+6. 如果本轮修改了 workflow 工具或工作流文档，把操作写入两个 workflow_optimization_log.md。
+完成后汇报生成图片路径、prompt_manifest.json 路径，以及哪些图号已写回 figure_map。
 ```
 
 ## 5. 最短可用提示

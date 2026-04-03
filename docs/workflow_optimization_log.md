@@ -4069,3 +4069,416 @@
   - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v13.docx`
   - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v13.docx`
   - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py selftest --workspace-config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 196
+- Action: Reworked the generated Chapter 5 function-structure renderer so `图5.1 系统功能结构图` now uses a monochrome thesis-style module tree that matches the user's reference image more closely: top-level system title, horizontal module layer, and vertically listed subfunctions under each module.
+- Purpose: Replace the previous blue/gray card-style structure figure with a more conventional academic paper function architecture diagram that reads like a论文功能架构图 instead of a product UI mock graphic.
+- Result:
+  - Workflow bundle changes:
+    - `tools/core/figure_assets.py` now derives the root title with `_root_system_label()` so project titles like `...设计与实现` render as a clean system name in the top box
+    - `_render_function_structure_png()` now renders:
+      - white background
+      - black outline boxes
+      - black connector lines and arrow heads
+      - centered top-level system box
+      - a horizontal branch line from the root to all major modules
+      - per-module vertical child branches with left-incoming arrows for subfunctions
+    - added `FUNCTION_STRUCTURE_RENDERER_VERSION = "v2-monochrome-module-tree"` and injected it into the figure spec hash, so workflow reruns automatically invalidate the old cached `fig5-1-function-structure.png` instead of silently reusing the earlier colored version
+  - Teatrace workspace verification:
+    - rerunning `prepare-figures` regenerated only `5.1` and kept other figures cached:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/docs/images/generated/fig5-1-function-structure.png`
+    - the regenerated image shows monochrome dominant colors rather than the old blue theme; a quick pixel summary returned:
+      - `(255, 255, 255)` as the dominant background color
+      - `(0, 0, 0)` as the dominant outline/text color
+    - synced root compatibility mirror with `workflow/scripts/sync_root_compat.sh`
+    - rebuilt Linux deliverable:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/hyperledger-fabric_siyuan_v14.docx`
+    - rebuilt summaries:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/build_runs/build_summary_20260403T112313_0800.json`
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260403T112359_0800.json`
+- Validation passed:
+  - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/figure_assets.py`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-build --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v14.docx`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --output-name hyperledger-fabric_siyuan_v14.docx`
+
+### Step 197
+- Action: Added an explicit AI image-generation stage to the thesis workflow so selected thesis figures can be generated through a Zetatechs-compatible OpenAI image endpoint, materialized as local PNG assets, recorded into `figure_map`, and guarded by release-time preflight checks when they override built-in generated figure numbers.
+- Purpose: Give the workflow a reproducible way to prepare higher-quality thesis illustration assets from prompts instead of relying only on local diagram renderers, while still keeping release behavior deterministic and preventing silent regressions when AI-generated replacement figures are missing.
+- Result:
+  - Workflow bundle changes:
+    - added `tools/core/ai_image_generation.py`
+      - declares workspace-level `image_generation` defaults and `ai_figure_specs` normalization
+      - builds thesis-oriented prompts from figure caption, chapter, intent, project title, and chain platform
+      - calls `POST /v1/images/generations` against the configured Zetatechs-compatible endpoint
+      - writes generated images to `docs/images/generated_ai/`
+      - persists prompt metadata to `prompt_manifest.json`
+      - updates `workspace.json.figure_map` with `renderer: ai-image` and stable `spec_hash`
+    - `tools/cli.py` now exposes `prepare-ai-figures --config <workspace.json> [--fig <图号>] [--force] [--dry-run]`
+    - `tools/core/project_common.py` now seeds new workspace configs with `image_generation` and `ai_figure_specs`
+    - `tools/core/figure_assets.py` now:
+      - blocks `prepare-figures` when an `override_builtin=true` AI replacement PNG has not been prepared yet
+      - preserves AI-backed `figure_map` entries for overridden built-in figure numbers instead of overwriting them with local renderer output
+    - `tools/core/workspace_checks.py` now surfaces `Blocking AI figure override issues` during `release-preflight`
+    - updated workflow docs and templates:
+      - `tools/README.md`
+      - `workflow/README.md`
+      - `workflow/WORKSPACE_SPEC.md`
+      - `workflow/references/command-map.md`
+      - `workflow/templates/workspace-config.template.json`
+      - `workflow/08-dual-platform-release.md`
+      - `workflow/06-ai-prompt-guide.md`
+      - `workflow/09-testing-and-regression.md`
+  - Compatibility and reproducibility:
+    - ran `workflow/scripts/sync_root_compat.sh` so root `tools/core/` now mirrors the bundle-side AI generation implementation
+    - root `tools/cli.py` remains a wrapper to `workflow_bundle/tools/cli.py`, so the new command is reachable from the compatibility entry as well
+    - root-side workflow prompt guidance was also updated so future fresh AI conversations reading the compatibility docs do not miss the explicit `prepare-ai-figures` stage
+  - Validation highlights:
+    - static compile passed for the new and modified Python modules
+    - CLI help and dry-run path are available for the new command
+    - a mocked end-to-end prepare flow successfully wrote a local PNG, updated `figure_map`, and let `prepare-figures` report `preserved-ai` for an overridden built-in figure
+    - a real `release-preflight` run against a temp config with `override_builtin=true` and no prepared PNG failed as intended with a blocking AI override message
+- Validation passed:
+  - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/cli.py /home/ub/thesis_materials/workflow_bundle/tools/core/ai_image_generation.py /home/ub/thesis_materials/workflow_bundle/tools/core/figure_assets.py /home/ub/thesis_materials/workflow_bundle/tools/core/workspace_checks.py /home/ub/thesis_materials/workflow_bundle/tools/core/project_common.py`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-ai-figures --config /tmp/ai_fig_test_n263af7d/workspace.json --fig 5.1 --dry-run`
+  - mocked `run_prepare_ai_figures()` integration on `/tmp/ai_fig_test_n263af7d/workspace.json`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-preflight --config /tmp/ai_fig_preflight_radp2bkj/workspace.json`
+  - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/check_bundle_sync.sh`
+
+### Step 198
+- Action: Hardened the AI image-generation request path so when an OpenAI-compatible provider rejects the `response_format` field, the workflow automatically retries the same request without that parameter instead of failing the whole `prepare-ai-figures` command.
+- Purpose: The Zetatechs-compatible endpoint accepted the image request only after removing `response_format`, so the workflow needed a provider-compatibility fallback to keep AI figure generation reproducible across slightly different OpenAI-style gateway implementations.
+- Result:
+  - Workflow bundle changes:
+    - `tools/core/ai_image_generation.py` now imports `HTTPError` and wraps the initial image request
+    - when the first request returns `HTTP 400` with `param=response_format` or an equivalent error message, the tool removes `response_format` from the payload and retries once automatically
+    - this preserves the existing `b64_json`-first behavior for providers that support it, while letting URL-based fallbacks continue to work on providers that reject the parameter entirely
+  - Teatrace workspace verification:
+    - updated `/home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json` to add:
+      - `ai_figure_specs.5.1`
+      - `image_generation.default_model = gpt-image-1`
+    - confirmed `.bashrc` exported `NEWAPI_API_KEY`, and identified that plain `source ~/.bashrc` in a non-interactive shell does not load it because the file returns early for non-interactive sessions
+    - rerunning `prepare-ai-figures --fig 5.1` after the fallback fix succeeded and generated:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/docs/images/generated_ai/fig5-1-ai.png`
+    - `workspace.json.figure_map["5.1"]` now points to:
+      - `docs/images/generated_ai/fig5-1-ai.png`
+      - `renderer: ai-image`
+    - rerunning `prepare-figures` preserved the AI override:
+      - `5.1 [preserved-ai]`
+    - rerunning `sync_root_compat.sh` refreshed the root compatibility mirror
+    - rerunning `release-preflight` showed:
+      - `Blocking AI figure override issues: none`
+- Validation passed:
+  - diagnostic provider call returned:
+    - `400 {"error":{"message":"Unknown parameter: 'response_format'.","type":"invalid_request_error","param":"response_format","code":"unknown_parameter"}}`
+  - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/ai_image_generation.py`
+  - networked `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-ai-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --fig 5.1`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-preflight --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 199
+- Action: Evaluated the user's request to switch the entire workflow to `gemini-3.1-flash-image-preview` for AI figure generation, verified it against the live Zetatechs endpoint, and kept the workflow default on `gpt-image-1` while adding a clearer unsupported-model error message.
+- Purpose: Avoid leaving the thesis workflow in a broken default state. The current Zetatechs OpenAI image endpoint does not support `gemini-3.1-flash-image-preview`, so switching all defaults to that model would make future `prepare-ai-figures` runs fail.
+- Result:
+  - Workflow bundle changes:
+    - kept `image_generation.default_model` at `gpt-image-1` in:
+      - `tools/core/ai_image_generation.py`
+      - `tools/core/project_common.py`
+      - `workflow/templates/workspace-config.template.json`
+      - `workflow/WORKSPACE_SPEC.md`
+    - added clearer provider-compatibility handling in `tools/core/ai_image_generation.py`
+      - when the provider returns an error message containing `not supported model for image generation`, the workflow now raises an explicit `RuntimeError` explaining that the current Zetatechs OpenAI image endpoint expects dedicated image models such as `gpt-image-1`, and that Gemini image-preview models require a different Gemini Generate Content flow
+  - Teatrace workspace handling:
+    - restored `/home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json` to `image_generation.default_model = gpt-image-1`
+    - preserved the successfully generated AI override for `图5.1`, so the workspace remains usable and release-safe
+  - Conclusion:
+    - the request to switch all defaults to `gemini-3.1-flash-image-preview` could not be completed safely on the current provider path
+    - if Gemini-family image generation is still desired later, the correct next step is not a model-name swap on `/v1/images/generations`, but a separate Gemini Generate Content integration against a provider/model combination that actually supports image output
+- Validation passed:
+  - diagnostic provider call for `gemini-3.1-flash-image-preview` returned:
+    - `500 {"error":{"message":"not supported model for image generation, only imagen models are supported ...","type":"new_api_error","code":"convert_request_failed"}}`
+  - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/ai_image_generation.py /home/ub/thesis_materials/workflow_bundle/tools/core/project_common.py`
+
+### Step 200
+- Action: Added a separate `zetatechs-gemini` AI image provider branch based on Gemini Generate Content, switched workflow defaults to that provider, and validated live image generation with `gemini-3.1-flash-image-preview`.
+- Purpose: The user wanted the workflow to use Gemini-family image generation rather than only the OpenAI Image compatibility endpoint. A dedicated Gemini branch was required because the OpenAI Image path and the Gemini Generate Content path have different endpoints and payload formats.
+- Result:
+  - Workflow bundle changes:
+    - `tools/core/ai_image_generation.py` now supports three provider labels:
+      - `zetatechs-gemini`
+      - `zetatechs`
+      - `zetatechs-openai-image`
+    - the default config now points to:
+      - `provider: zetatechs-gemini`
+      - `base_url: https://api.zetatechs.com`
+      - `default_model: gemini-3.1-flash-image-preview`
+    - added Gemini request handling through:
+      - `POST /v1beta/models/{model}:generateContent?key=...`
+      - `contents[].parts[].text`
+      - `generationConfig.responseModalities = ["IMAGE", "TEXT"]`
+      - `generationConfig.imageConfig`
+    - Gemini responses are now parsed from `candidates[].content.parts[].inlineData`
+    - kept the OpenAI Image compatibility branch intact for `zetatechs` / `zetatechs-openai-image`
+    - updated workspace defaults in:
+      - `tools/core/project_common.py`
+      - `workflow/templates/workspace-config.template.json`
+      - `workflow/WORKSPACE_SPEC.md`
+      - `tools/README.md`
+      - `workflow/README.md`
+      - `workflow/06-ai-prompt-guide.md`
+  - Live provider verification:
+    - direct diagnostic calls confirmed that both:
+      - `gemini-3.1-flash-image-preview`
+      - `gemini-3-pro-image-preview`
+      return `200` on the Zetatechs Gemini Generate Content endpoint and produce `inlineData`
+    - reran Teatrace workspace `prepare-ai-figures --fig 5.1 --force` through the new Gemini branch and regenerated:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/docs/images/generated_ai/fig5-1-ai.png`
+    - `prompt_manifest.json` and `ai_figure_prepare_summary.json` now record:
+      - `provider: zetatechs-gemini`
+      - `model: gemini-3.1-flash-image-preview`
+    - `figure_map["5.1"]` remains mapped to the AI override PNG and `prepare-figures` reports:
+      - `5.1 [preserved-ai]`
+- Validation passed:
+  - direct Gemini endpoint diagnostics for:
+    - `gemini-3.1-flash-image-preview`
+    - `gemini-3-pro-image-preview`
+  - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/ai_image_generation.py /home/ub/thesis_materials/workflow_bundle/tools/core/project_common.py`
+  - networked `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-ai-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --fig 5.1 --force`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+### Step 201
+- Action: Refined the AI figure prompt builder using the thesis diagram checklist and reference diagrams under `docs/images/`, shifting prompt generation from generic “academic illustration” language to structured thesis-diagram instructions with type-specific templates.
+- Purpose: The existing prompts were too close to general illustration prompts, which risks generating concept art instead of the white-background, black-line, UML/flowchart/architecture style diagrams actually used in the thesis. The workflow needed explicit diagram-language prompts that match the repository's reference figures.
+- Result:
+  - Workflow bundle changes:
+    - `tools/core/ai_image_generation.py` now supports richer `ai_figure_specs` fields:
+      - `diagram_type`
+      - `style_notes`
+    - `_build_prompt()` was rewritten to emit:
+      - explicit “论文技术图” framing
+      - white-background / black-line / 2D technical-diagram constraints
+      - simplified-Chinese label constraints
+      - strong negative constraints against poster-like, illustrative, UI-screenshot, or decorative outputs
+    - added diagram-type-specific prompt branches for:
+      - `use_case`
+      - `function_structure`
+      - `flowchart`
+      - `sequence`
+      - `er`
+      - `architecture`
+      - generic technical fallback
+    - prompt inference now derives a diagram type from caption/intent when `diagram_type` is not explicitly set
+  - Teatrace workspace refinement:
+    - `workspace.json` now sets `ai_figure_specs.5.1.diagram_type = function_structure`
+    - `workspace.json` now sets `ai_figure_specs.5.1.style_notes` to match the repository reference image style:
+      - white background
+      - black lines
+      - top root node
+      - horizontally expanded first-level modules
+      - vertically listed subfunctions under each module
+    - reran `prepare-ai-figures --fig 5.1 --force`, which regenerated the current AI figure with the new prompt template
+    - verified that `prompt_manifest.json` now stores the new thesis-diagram prompt text and a refreshed `spec_hash`
+    - reran `prepare-figures`, which kept:
+      - `5.1 [preserved-ai]`
+    - reran `sync_root_compat.sh` so the root compatibility mirror now carries the optimized prompt builder too
+- Validation passed:
+  - reviewed reference sources:
+    - `/home/ub/thesis_materials/docs/THESIS_DIAGRAMS_LIST.md`
+    - `/home/ub/thesis_materials/docs/images/image.png`
+    - `/home/ub/thesis_materials/docs/images/image-1.png`
+    - `/home/ub/thesis_materials/docs/images/image-2.png`
+    - `/home/ub/thesis_materials/docs/images/image-3.png`
+    - `/home/ub/thesis_materials/docs/images/image-4.png`
+    - `/home/ub/thesis_materials/docs/images/image-5.png`
+  - `python3 -m py_compile /home/ub/thesis_materials/workflow_bundle/tools/core/ai_image_generation.py`
+  - dry-run `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-ai-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --fig 5.1 --dry-run`
+  - networked `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-ai-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --fig 5.1 --force`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+
+### Step 202
+- Action: Synced the updated workflow bundle into the Teatrace workspace, reran workflow validation, and added a README-level rule that AI figure prompts must target thesis-style technical diagrams instead of generic illustrations.
+- Purpose: The prompt builder change was already implemented, but the workspace signature still needed to be refreshed and the workflow entry docs still needed to tell future AI sessions how to keep using `diagram_type` and `style_notes` correctly. Without that final alignment, a new conversation could still drift back to generic image prompts.
+- Result:
+  - Runtime state:
+    - `sync-workflow-assets` refreshed the Teatrace workspace bundle signature to `ec0e734f3d2a`
+    - the workspace now reports:
+      - `workflow_signature_status: current`
+      - `current_bundle_signature: ec0e734f3d2a`
+      - `recorded_bundle_signature: ec0e734f3d2a`
+  - Validation state:
+    - `release-preflight` now passes with:
+      - no blocking packet sync issues
+      - no blocking AI figure override issues
+      - no citation/style review warnings
+    - bundle `selftest` passed after the AI prompt refactor
+  - Documentation refinement:
+    - `workflow/README.md` now explicitly tells operators that `prepare-ai-figures` should use:
+      - `diagram_type`
+      - `style_notes`
+      - thesis reference sources under `docs/THESIS_DIAGRAMS_LIST.md` and `docs/images/`
+      - white-background / black-line / 2D thesis technical diagram constraints
+- Validation passed:
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-preflight --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py selftest`
+
+### Step 203
+- Action: Raised the AI figure generation timeout baseline from `120s` to `300s` in the workflow bundle defaults and in the active Teatrace workspace after the new multi-figure technical-diagram run hit a network timeout.
+- Purpose: The previous timeout was adequate for simple or single-image calls, but the Gemini technical-diagram requests under proxy conditions can exceed that window. The workflow needed a more realistic timeout so `prepare-ai-figures` does not fail prematurely during normal thesis use.
+- Result:
+  - workflow defaults updated:
+    - `tools/core/ai_image_generation.py`
+    - `workflow/WORKSPACE_SPEC.md`
+    - `workflow/templates/workspace-config.template.json`
+  - active workspace updated:
+    - `workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `image_generation.timeout_sec = 300`
+  - next execution strategy changed from one-shot batch generation to per-figure generation, so slow figures can complete independently and failures can be isolated by figure number.
+- Validation in progress:
+  - previous batch run failed with:
+    - `urllib.error.URLError: <urlopen error timed out>`
+  - next step is to rerun `prepare-ai-figures` with the raised timeout and explicit per-figure targets.
+
+### Step 204
+- Action: Completed direct-network AI figure generation for Teatrace figures `4.1`, `4.3`, `4.4`, and `4.5`, then resynced compatibility assets and reran workflow validation.
+- Purpose: After timeout expansion, runtime troubleshooting showed the configured proxy path could hang on `api.zetatechs.com`, while direct elevated connectivity worked normally. The workflow needed a confirmed operational path so the new thesis-diagram prompt system could be exercised on real chapter figures rather than just a single demo figure.
+- Result:
+  - Connectivity findings:
+    - `curl -I https://api.zetatechs.com` succeeded under escalated direct access
+    - `curl -x http://10.225.123.246:7897 -I https://api.zetatechs.com` stalled, indicating the proxy path was the unstable leg for this environment
+  - Generated AI figures:
+    - `docs/images/generated_ai/fig4-1-ai.png`
+    - `docs/images/generated_ai/fig4-3-ai.png`
+    - `docs/images/generated_ai/fig4-4-ai.png`
+    - `docs/images/generated_ai/fig4-5-ai.png`
+    - existing `docs/images/generated_ai/fig5-1-ai.png` remained active
+  - Workspace figure map now uses AI outputs for:
+    - `4.1`
+    - `4.3`
+    - `4.4`
+    - `4.5`
+    - `5.1`
+    - while `4.2` remains on deterministic Mermaid E-R generation
+  - Workflow validation state:
+    - reran `sync_root_compat.sh` to refresh root compatibility mirrors after the timeout-default change
+    - reran `sync-workflow-assets` so the Teatrace workspace recorded the current bundle signature `bf829a9e0ce3`
+    - reran `release-preflight`, which passed with no blocking AI override issues
+    - reran `selftest`, which passed after the timeout-default change
+- Validation passed:
+  - `curl -I https://api.zetatechs.com`
+  - `bash -ic 'python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-ai-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --fig 4.1 --force'`
+  - `bash -ic 'for fig in 4.3 4.4 4.5; do python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py prepare-ai-figures --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json --fig "$fig" --force || exit 1; done'`
+  - `bash /home/ub/thesis_materials/workflow_bundle/workflow/scripts/sync_root_compat.sh`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py sync-workflow-assets --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-preflight --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py selftest`
+
+### Step 205
+- Action: Tightened the flowchart prompt rules to force thesis-style abstraction when process content is too dense, and refined the Teatrace `4.4` spec so the chart only shows the main inter-stage business flow instead of expanding every micro-operation.
+- Purpose: The first AI version of `图4.4 核心业务流程图二` packed too many field-level and batch-ID details into a single page image, which made the layout crowded and reduced readability. The workflow needed explicit “compress rather than overcrowd” guidance for flowcharts.
+- Result:
+  - workflow rule update:
+    - `tools/core/ai_image_generation.py` now tells `flowchart` prompts to:
+      - merge repetitive micro-steps
+      - keep node density suitable for a single thesis page
+      - prefer short phrase labels over long field lists
+      - abstract repeated `生成ID / 写入链上 / 返回结果` details unless they are essential
+  - workspace refinement:
+    - `workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `ai_figure_specs.4.4.intent` now explicitly asks for the main process line only
+    - `ai_figure_specs.4.4.style_notes` now restricts each stage to one key business node plus the necessary on-chain submission node
+  - next step:
+    - regenerate `4.4` and verify that the updated image is less crowded and more suitable for direct insertion into the thesis
+
+### Step 206
+- Action: Added an explicit prompt rule that thesis diagrams must not contain embedded figure titles, chapter labels, sidebars, or stray vertical auxiliary text, and tightened the Teatrace `4.4` spec to forbid the unwanted left-edge labels that appeared in the regenerated flowchart.
+- Purpose: The compressed `4.4` flowchart improved density, but the image still contained non-paper artifacts such as `系统设计章`, `整个段`, `上链进`, and `并链进` along the margin. These labels are not part of the intended business flow and must be blocked at the workflow prompt layer.
+- Result:
+  - workflow rule update:
+    - `tools/core/ai_image_generation.py` now forbids:
+      - duplicated figure titles inside the image
+      - chapter wording such as `第X章` or `系统设计章`
+      - left/right auxiliary bars
+      - vertical edge labels and decorative side annotations
+  - workspace refinement:
+    - `workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `ai_figure_specs.4.4.style_notes` now explicitly bans:
+      - `系统设计章`
+      - `整个段`
+      - `上链进`
+      - `并链进`
+      - any similar edge labels or extra sectional ornaments
+  - next step:
+    - regenerate `4.4`, then resync workflow assets and rerun validation
+
+### Step 207
+- Action: Strengthened the prompt guardrails again after inspection showed that some regenerated AI figures still contained page-header, page-footer, or in-image caption artifacts, and updated the Teatrace specs for `4.1`, `4.3`, and `4.5` to explicitly forbid those artifacts.
+- Purpose: A single “no embedded title” rule was not strong enough for all figure types. The workflow needed explicit bans on edge text, header/footer lines, `Fig./Figure`, English process words, and any non-diagram layout text so the output image contains only the diagram body.
+- Result:
+  - workflow rule update:
+    - `tools/core/ai_image_generation.py` now explicitly bans:
+      - page headers and footers
+      - paper titles and chapter titles inside the image
+      - horizontal separator lines used as faux headers
+      - `Fig.` and `Figure`
+      - English flow words such as `Yes`, `No`, `End`, `Display`, `trace code`
+      - side-lane decorations outside the actual chart body
+  - workspace refinement:
+    - `workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `ai_figure_specs.4.1.style_notes` now requires a pure architecture body with no top/bottom title text
+    - `ai_figure_specs.4.3.style_notes` now requires a pure flowchart body with no header/footer text
+    - `ai_figure_specs.4.5.style_notes` now requires simplified-Chinese-only labels and bans all English and side annotations
+  - next step:
+    - regenerate `4.1`, `4.3`, and `4.5`, then visually inspect the outputs
+
+### Step 208
+- Action: Added a deterministic fallback flowchart renderer for figure `4.3` and disabled the `4.3` AI override in the active Teatrace workspace after the AI provider returned `403 insufficient_user_quota`.
+- Purpose: `4.3` could not be reliably regenerated through the Gemini image path because the current provider quota was exhausted, and the old deterministic fallback was a sequence diagram that no longer matched the chapter’s desired “核心业务流程图一” form. The workflow needed a quota-independent fallback that still fits the thesis style requirements.
+- Result:
+  - workflow bundle change:
+    - `tools/core/figure_assets.py` now builds `4.3` from a dedicated deterministic Mermaid flowchart:
+      - start
+      - batch info entry
+      - completeness check
+      - main-record summary creation
+      - `CreateBatch` chain submission
+      - chain success/failure branching
+      - result return
+    - the output file name changed from:
+      - `generated/fig4-3-batch-sequence.png`
+      - to `generated/fig4-3-batch-flow.png`
+  - workspace change:
+    - `workspaces/teatrace_thesis/workflow/configs/workspace.json`
+    - `ai_figure_specs.4.3.enabled = false`
+    - this lets `prepare-figures` take ownership of `4.3` again while keeping AI overrides for the other figures
+  - next step:
+    - rerun `prepare-figures`, inspect the regenerated deterministic `4.3`, then resync workflow assets and rerun validation
+
+### Step 209
+- Action: Regenerated the Teatrace Linux delivery DOCX with the updated figure set, then audited the workflow docs for AI image-generation support and added the missing operating rules discovered during real use.
+- Purpose: The document needed to be rebuilt after the figure-map refresh, and the workflow still lacked explicit written rules for two important operational details:
+  - AI PNGs must not contain embedded captions or page-layout text
+  - individual figures must be allowed to fall back from AI generation to deterministic generation when quota or quality blocks the AI path
+- Result:
+  - release output refreshed:
+    - `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>` rebuilt:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/hyperledger-fabric.docx`
+    - release summary updated:
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/release_summary.json`
+      - `/home/ub/thesis_materials/workspaces/teatrace_thesis/word_output/release_runs/release_summary_20260403T161941_0800.json`
+  - workflow doc refinements:
+    - `workflow/README.md`
+    - `workflow/06-ai-prompt-guide.md`
+    - `workflow/WORKSPACE_SPEC.md`
+    - `workflow/09-testing-and-regression.md`
+    - `tools/README.md`
+    - all now explicitly state that:
+      - AI figure PNGs must contain only the diagram body
+      - figure captions remain in Markdown / DOCX layout, not inside the image
+      - a single figure can disable `ai_figure_specs.<fig>.enabled` and fall back to deterministic `prepare-figures`
+      - AI figure review should include a visual check for embedded titles, header/footer text, `Fig.` / `Figure`, and other non-diagram artifacts
+- Validation passed:
+  - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`

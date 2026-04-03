@@ -81,6 +81,22 @@
     "keywords_cn": "",
     "keywords_en": ""
   },
+  "image_generation": {
+    "enabled": false,
+    "provider": "zetatechs-gemini",
+    "base_url": "https://api.zetatechs.com",
+    "api_key_env": "NEWAPI_API_KEY",
+    "default_model": "gemini-3.1-flash-image-preview",
+    "default_quality": "high",
+    "default_size": "1536x1024",
+    "response_format": "b64_json",
+    "gemini_image_size": "1K",
+    "gemini_response_modalities": ["IMAGE", "TEXT"],
+    "timeout_sec": 300,
+    "output_dir": "docs/images/generated_ai",
+    "auto_generate_on_prepare_figures": false
+  },
+  "ai_figure_specs": {},
   "figure_map": {},
   "metadata": {
     "project_root": "/abs/path/to/project",
@@ -97,6 +113,26 @@
 - 小节结构不再写死在工具代码中，而是由 `docs/writing/project_profile.json` 按项目画像动态生成。
 - `docs/materials/material_pack.json` 不只承载 `summary/evidence`，还承载结构化 `assets`，用于图表、结构化索引和测试证据抽取。
 - `docs/materials/code_evidence_pack.json` / `code_evidence_pack.md` 是第 5 章的代码证据索引，配套真实代码片段与白底黑字代码截图目录。
+- `image_generation` 用于声明 AI 生图提供方和默认模型参数；当前工作流默认走 `zetatechs-gemini` provider，通过 Gemini Generate Content 生图；仍兼容 `zetatechs` / `zetatechs-openai-image` 的 OpenAI Image 路径。API key 建议只通过环境变量传入，不写进 workspace config。
+- `ai_figure_specs` 用于按图号声明哪些插图走 AI 生成，以及这些图的意图、章节归属和是否覆盖内置生成图。
+  常用字段包括：
+  - `caption`
+  - `chapter`
+  - `intent`
+  - `diagram_type`
+  - `style_notes`
+  - `enabled`
+  - `override_builtin`
+  其中 `diagram_type` 推荐使用：
+  - `use_case`
+  - `function_structure`
+  - `flowchart`
+  - `sequence`
+  - `er`
+  - `architecture`
+  `style_notes` 用于补充对参考图风格、布局方式、线框样式、图标使用边界等具体要求。
+  AI 图默认应只生成图主体本身，不在 PNG 内嵌图号、图题、章节名、页眉页脚或 `Fig.` / `Figure`。论文题注由正文和导出流程统一插入。
+  `enabled=false` 可用于按图号关闭 AI 覆盖并回退到 `prepare-figures` 的确定性生成结果，适合额度不足、质量不稳或该图不适合 AI 生成的场景。
 - `postprocess` 段用于声明 Windows Word 终排输出位置，默认会写到 `final/`，不与 `word_output/` 中的基础排版稿混放。
 - `workflow_state` 段用于声明工作流状态文件位置，包括冷启动 handoff 和 workspace 执行日志。
 - `workflow_state.workspace_lock_json` 用于串行化同一 workspace 的变更型命令，避免多会话并发改写。
@@ -183,5 +219,6 @@
 - `python3 workflow_bundle/tools/cli.py prepare-chapter --config <workspace.json> --chapter <chapter-file>`
 - `python3 workflow_bundle/tools/cli.py start-chapter --config <workspace.json> --chapter <chapter-file>`
 - `python3 workflow_bundle/tools/cli.py finalize-chapter --config <workspace.json> --chapter <chapter-file>`
+- `python3 workflow_bundle/tools/cli.py prepare-ai-figures --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py lock-status --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py clear-lock --config <workspace.json> --force`

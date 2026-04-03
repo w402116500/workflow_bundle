@@ -12,6 +12,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
+from core.ai_image_generation import ai_override_blocking_entries, ai_override_map
 from core.page_screenshot_assets import stage_chapter5_test_screenshots
 from core.project_common import load_workspace_context, make_relative, material_output_paths, read_json, write_json
 
@@ -19,6 +20,7 @@ from core.project_common import load_workspace_context, make_relative, material_
 MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)\n```", re.S)
 HEADING_L2_RE = re.compile(r"^##\s+5\.(?P<num>\d+)\s+(?P<title>.+?)\s*$")
 HEADING_L3_RE = re.compile(r"^###\s+5\.\d+\.\d+\s+(?P<title>.+?)\s*$")
+FUNCTION_STRUCTURE_RENDERER_VERSION = "v2-monochrome-module-tree"
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,11 @@ def _shorten_label(text: str) -> str:
     return label
 
 
+def _root_system_label(project_title: str) -> str:
+    label = re.sub(r"(的)?设计与实现$", "", project_title).strip()
+    return label or "系统功能结构"
+
+
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     candidates = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
@@ -130,17 +137,24 @@ def _rounded_rect(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], rad
     draw.rounded_rectangle(box, radius=radius, outline=(203, 213, 225), fill=(248, 250, 252), width=2)
 
 
-def _arrow(draw: ImageDraw.ImageDraw, p1: tuple[int, int], p2: tuple[int, int]) -> None:
+def _arrow(
+    draw: ImageDraw.ImageDraw,
+    p1: tuple[int, int],
+    p2: tuple[int, int],
+    *,
+    color: tuple[int, int, int] = (0, 0, 0),
+    width: int = 2,
+    head: int = 9,
+) -> None:
     x1, y1 = p1
     x2, y2 = p2
-    draw.line((x1, y1, x2, y2), fill=(100, 116, 139), width=3)
-    head = 10
+    draw.line((x1, y1, x2, y2), fill=color, width=width)
     angle = math.atan2(y2 - y1, x2 - x1)
     a1 = angle + math.pi * 0.85
     a2 = angle - math.pi * 0.85
     p3 = (x2 + head * math.cos(a1), y2 + head * math.sin(a1))
     p4 = (x2 + head * math.cos(a2), y2 + head * math.sin(a2))
-    draw.polygon([p2, p3, p4], fill=(100, 116, 139))
+    draw.polygon([p2, p3, p4], fill=color)
 
 
 def _extract_chapter5_modules(chapter_path: Path) -> list[tuple[str, list[str]]]:
@@ -204,6 +218,23 @@ def _build_record_flow_mermaid() -> str:
             '    D -- "是" --> F["物流商提交仓储与物流记录"]',
             '    F --> G["经销商提交销售记录"]',
             '    G --> H["系统推进批次阶段并更新链上状态"]',
+        ]
+    )
+
+
+def _build_batch_init_flow_mermaid() -> str:
+    return "\n".join(
+        [
+            "flowchart TD",
+            '    A["开始"] --> B["录入批次基础信息"]',
+            '    B --> C{"信息是否完整"}',
+            '    C -- "否" --> D["提示补全后重新提交"]',
+            '    C -- "是" --> E["生成批次主档摘要"]',
+            '    E --> F["调用 CreateBatch 提交链上存证"]',
+            '    F --> G{"上链是否成功"}',
+            '    G -- "否" --> H["返回错误并记录失败原因"]',
+            '    G -- "是" --> I["写入批次主档与初始状态"]',
+            '    I --> J["返回批次建档结果"]',
         ]
     )
 
@@ -273,46 +304,97 @@ def _render_function_structure_png(project_title: str, chapter5_path: Path, outp
     if not modules:
         raise RuntimeError(f"unable to derive chapter 5 module structure from {chapter5_path}")
 
-    column_width = 320
-    module_box_height = 70
-    child_box_height = 58
-    module_gap = 28
-    child_gap = 16
-    top_margin = 50
-    left_margin = 48
-    root_box = (540, 30, 1340, 110)
-    width = left_margin * 2 + len(modules) * column_width + max(len(modules) - 1, 0) * module_gap
+    module_count = len(modules)
+    column_width = 270
+    module_box_height = 82
+    child_box_height = 54
+    module_gap = 40
+    child_gap = 14
+    left_margin = 52
+    top_margin = 34
+    root_box_height = 80
+    root_box_width = 720
+
+    content_width = left_margin * 2 + module_count * column_width + max(module_count - 1, 0) * module_gap
     max_children = max(len(children) for _, children in modules)
-    height = top_margin + 140 + module_box_height + 40 + max_children * (child_box_height + child_gap) + 80
+    canvas_width = max(content_width, root_box_width + 160, 1680)
+    canvas_height = max(
+        820,
+        top_margin + root_box_height + 110 + module_box_height + 40 + max_children * (child_box_height + child_gap) + 80,
+    )
+
+    root_box = (
+        (canvas_width - root_box_width) // 2,
+        top_margin,
+        (canvas_width + root_box_width) // 2,
+        top_margin + root_box_height,
+    )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    image = Image.new("RGB", (max(width, 1880), max(height, 880)), (255, 255, 255))
+    image = Image.new("RGB", (canvas_width, canvas_height), (255, 255, 255))
     draw = ImageDraw.Draw(image)
 
-    title_font = _load_font(26)
-    module_font = _load_font(22)
-    child_font = _load_font(18)
+    root_font = _load_font(28)
+    module_font = _load_font(20)
+    child_font = _load_font(17)
 
-    draw.rounded_rectangle(root_box, radius=20, outline=(96, 165, 250), fill=(239, 246, 255), width=3)
-    _center_text(draw, root_box, _wrap_text(project_title, 18), title_font, (15, 23, 42))
+    border_color = (0, 0, 0)
+    text_color = (0, 0, 0)
+    line_color = (0, 0, 0)
 
-    module_y = 180
-    child_y = 300
-    for idx, (module, children) in enumerate(modules):
-        x1 = left_margin + idx * (column_width + module_gap)
-        module_box = (x1, module_y, x1 + column_width, module_y + module_box_height)
-        _rounded_rect(draw, module_box)
-        _center_text(draw, module_box, _wrap_text(module, 10), module_font, (15, 23, 42))
+    draw.rounded_rectangle(root_box, radius=10, outline=border_color, fill=(255, 255, 255), width=2)
+    _center_text(draw, root_box, _wrap_text(_root_system_label(project_title), 18), root_font, text_color)
+
+    module_y = root_box[3] + 96
+    module_bottom = module_y + module_box_height
+    child_start_y = module_bottom + 34
+    branch_bus_y = root_box[3] + 44
+    root_center_x = (root_box[0] + root_box[2]) // 2
+
+    module_boxes: list[tuple[int, int, int, int]] = []
+    for idx in range(module_count):
+        x1 = (canvas_width - content_width) // 2 + idx * (column_width + module_gap)
+        module_boxes.append((x1, module_y, x1 + column_width, module_bottom))
+
+    draw.line((root_center_x, root_box[3], root_center_x, branch_bus_y), fill=line_color, width=2)
+    draw.line(
+        (
+            (module_boxes[0][0] + module_boxes[0][2]) // 2,
+            branch_bus_y,
+            (module_boxes[-1][0] + module_boxes[-1][2]) // 2,
+            branch_bus_y,
+        ),
+        fill=line_color,
+        width=2,
+    )
+
+    for module_box, (module, children) in zip(module_boxes, modules):
+        draw.rounded_rectangle(module_box, radius=8, outline=border_color, fill=(255, 255, 255), width=2)
+        _center_text(draw, module_box, _wrap_text(module, 10), module_font, text_color)
 
         module_center_x = (module_box[0] + module_box[2]) // 2
-        _arrow(draw, ((root_box[0] + root_box[2]) // 2, root_box[3]), (module_center_x, module_box[1]))
+        _arrow(draw, (module_center_x, branch_bus_y), (module_center_x, module_box[1]))
+
+        child_box_width = column_width - 74
+        child_left = module_box[0] + (column_width - child_box_width) // 2 + 12
+        spine_x = child_left - 18
+        child_centers: list[int] = []
 
         for child_idx, child in enumerate(children):
-            cy1 = child_y + child_idx * (child_box_height + child_gap)
-            child_box = (x1 + 10, cy1, x1 + column_width - 10, cy1 + child_box_height)
-            draw.rounded_rectangle(child_box, radius=14, outline=(226, 232, 240), fill=(255, 255, 255), width=2)
-            _center_text(draw, child_box, _wrap_text(child, 12), child_font, (51, 65, 85))
-            _arrow(draw, (module_center_x, module_box[3]), (module_center_x, child_box[1]))
+            cy1 = child_start_y + child_idx * (child_box_height + child_gap)
+            child_box = (child_left, cy1, child_left + child_box_width, cy1 + child_box_height)
+            draw.rounded_rectangle(child_box, radius=8, outline=border_color, fill=(255, 255, 255), width=2)
+            _center_text(draw, child_box, _wrap_text(child, 12), child_font, text_color)
+            center_y = (child_box[1] + child_box[3]) // 2
+            child_centers.append(center_y)
+            _arrow(draw, (spine_x, center_y), (child_box[0], center_y))
+
+        if child_centers:
+            top_spine_y = child_centers[0]
+            bottom_spine_y = child_centers[-1]
+            draw.line((module_center_x, module_box[3], module_center_x, top_spine_y), fill=line_color, width=2)
+            draw.line((module_center_x, top_spine_y, spine_x, top_spine_y), fill=line_color, width=2)
+            draw.line((spine_x, top_spine_y, spine_x, bottom_spine_y), fill=line_color, width=2)
 
     image.save(output_path)
 
@@ -354,16 +436,15 @@ def _build_specs(config: dict[str, Any], manifest: dict[str, Any], workspace_roo
                 source_paths=(er.source_path,),
             )
         )
-    if sequence:
-        specs.append(
-            FigureSpec(
-                "4.3",
-                "图4.3 核心业务流程图一",
-                "generated/fig4-3-batch-sequence.png",
-                sequence.code,
-                source_paths=(sequence.source_path,),
-            )
+    specs.append(
+        FigureSpec(
+            "4.3",
+            "图4.3 核心业务流程图一",
+            "generated/fig4-3-batch-flow.png",
+            _build_batch_init_flow_mermaid(),
+            source_paths=(sequence.source_path,) if sequence else (),
         )
+    )
     specs.append(FigureSpec("4.4", "图4.4 核心业务流程图二", "generated/fig4-4-record-flow.png", _build_record_flow_mermaid()))
     specs.append(FigureSpec("4.5", "图4.5 核心业务流程图三", "generated/fig4-5-trace-flow.png", _build_trace_query_mermaid()))
     specs.append(
@@ -392,6 +473,7 @@ def _figure_spec_hash(spec: FigureSpec, config: dict[str, Any], manifest: dict[s
     if spec.renderer == "pillow":
         chapter5_path = workspace_root / config.get("build", {}).get("input_dir", "polished_v3") / "05-系统实现.md"
         project_title = config.get("metadata", {}).get("title") or manifest.get("title", "系统功能结构图")
+        payload["renderer_version"] = FUNCTION_STRUCTURE_RENDERER_VERSION
         payload["project_title"] = project_title
         payload["modules"] = _extract_chapter5_modules(chapter5_path) if chapter5_path.exists() else []
     else:
@@ -430,6 +512,11 @@ def run_prepare_figures(config_path: Path) -> dict[str, Any]:
     manifest = context["manifest"]
     workspace_root = context["workspace_root"]
 
+    override_blockers = ai_override_blocking_entries(context["config_path"])
+    if override_blockers:
+        rendered = ", ".join(f"{item['figure_no']} -> {item['expected_path']}" for item in override_blockers)
+        raise RuntimeError(f"missing AI override figure assets; run prepare-ai-figures first: {rendered}")
+
     diagram_dir = workspace_root / config.get("build", {}).get("diagram_dir", "docs/images")
     specs = _build_specs(config, manifest, workspace_root)
     if not specs:
@@ -437,12 +524,31 @@ def run_prepare_figures(config_path: Path) -> dict[str, Any]:
 
     generated: list[dict[str, str]] = []
     figure_map = dict(config.get("figure_map") or {})
+    overrides = ai_override_map(config, workspace_root)
     for spec in specs:
         output_path = diagram_dir / spec.output_name
         spec_hash = _figure_spec_hash(spec, config, manifest, workspace_root)
         existing_cfg = figure_map.get(spec.figure_no) if isinstance(figure_map.get(spec.figure_no), dict) else {}
         relative_output_path = make_relative(output_path, workspace_root)
         status = "rendered"
+
+        override = overrides.get(spec.figure_no)
+        if override:
+            figure_map[spec.figure_no] = {
+                "caption": override["caption"],
+                "path": override["path"],
+                "renderer": override["renderer"],
+                "spec_hash": override["spec_hash"],
+            }
+            generated.append(
+                {
+                    "figure_no": spec.figure_no,
+                    "caption": override["caption"],
+                    "path": str(override["output_path"]),
+                    "status": "preserved-ai",
+                }
+            )
+            continue
 
         if output_path.exists() and existing_cfg.get("spec_hash") == spec_hash and existing_cfg.get("path") == relative_output_path:
             status = "cached"

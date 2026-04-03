@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.build_final_thesis_docx import main as build_main, resolve_output_docx_path
+from core.ai_image_generation import run_prepare_ai_figures
 from core.code_evidence import run_extract_code
 from core.extract import run_extract
 from core.figure_assets import run_prepare_figures
@@ -213,6 +214,17 @@ def _print_prepare_figures_result(result: dict[str, Any]) -> None:
         print(f"{item['figure_no']} [{item.get('status', 'rendered')}]: {item['path']}")
 
 
+def _print_prepare_ai_figures_result(result: dict[str, Any]) -> None:
+    print(f"config_path: {result['config_path']}")
+    print(f"output_dir: {result['output_dir']}")
+    print(f"prompt_manifest_json: {result['prompt_manifest_json']}")
+    print(f"summary_json: {result['summary_json']}")
+    print(f"dry_run: {result['dry_run']}")
+    print(f"prepared_figures: {len(result['prepared_figures'])}")
+    for item in result["prepared_figures"]:
+        print(f"{item['figure_no']} [{item.get('status', 'prepared')}]: {item['path']}")
+
+
 def _run_release_build_flow(config_path: Path, output_name: str | None, command_name: str) -> dict[str, Any]:
     def _action() -> dict[str, Any]:
         figure_result = run_prepare_figures(config_path)
@@ -276,6 +288,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     prepare_figures_parser = subparsers.add_parser("prepare-figures", help="Generate project-specific figure assets and update figure_map for a workspace.")
     prepare_figures_parser.add_argument("--config", type=Path)
+
+    prepare_ai_figures_parser = subparsers.add_parser("prepare-ai-figures", help="Generate AI illustration assets into local files and update figure_map.")
+    prepare_ai_figures_parser.add_argument("--config", type=Path)
+    prepare_ai_figures_parser.add_argument("--fig", action="append", dest="figures")
+    prepare_ai_figures_parser.add_argument("--force", action="store_true")
+    prepare_ai_figures_parser.add_argument("--dry-run", action="store_true")
 
     scaffold_parser = subparsers.add_parser("scaffold", help="Generate chapter skeletons and literature tasks from a workspace config.")
     scaffold_parser.add_argument("--config", type=Path)
@@ -555,6 +573,30 @@ def main(argv: list[str] | None = None) -> int:
         print(f"generated_figures: {len(result['generated_figures'])}")
         for item in result["generated_figures"]:
             print(f"{item['figure_no']} [{item.get('status', 'rendered')}]: {item['path']}")
+        return 0
+
+    if args.command == "prepare-ai-figures":
+        config_path = _resolve_config_arg(args.config)
+        result = _run_with_workspace_lock(
+            config_path,
+            "prepare-ai-figures",
+            lambda: (
+                lambda inner: (
+                    _record_workspace_state(
+                        config_path,
+                        "prepare-ai-figures",
+                        {
+                            "figure_count": len(inner["prepared_figures"]),
+                            "dry_run": args.dry_run,
+                            "force": args.force,
+                            "figures": args.figures or [],
+                        },
+                    ),
+                    inner,
+                )[1]
+            )(run_prepare_ai_figures(config_path, args.figures, force=args.force, dry_run=args.dry_run)),
+        )
+        _print_prepare_ai_figures_result(result)
         return 0
 
     if args.command == "scaffold":
