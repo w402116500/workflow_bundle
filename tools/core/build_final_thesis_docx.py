@@ -753,6 +753,118 @@ def _add_ref_field(paragraph, bookmark_name: str, display_text: str):
     r5.append(fc_end)
     p.append(r5)
 
+
+def _append_field(
+    paragraph,
+    instruction: str,
+    *,
+    display_text: str = "",
+    font_size_pt: float = 12,
+    east_asia: str = "SimSun",
+    ascii_font: str = "Times New Roman",
+    bold: bool = False,
+) -> None:
+    def _formatted_run(text: str | None = None):
+        run = paragraph.add_run(text or "")
+        run.font.size = Pt(font_size_pt)
+        run.font.bold = bold
+        _set_run_rfonts(run, east_asia=east_asia, ascii_font=ascii_font)
+        _set_run_color_black(run)
+        return run
+
+    begin_run = _formatted_run()
+    fld_begin = OxmlElement("w:fldChar")
+    fld_begin.set(qn("w:fldCharType"), "begin")
+    fld_begin.set(qn("w:dirty"), "true")
+    begin_run._r.append(fld_begin)
+
+    instr_run = _formatted_run()
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = f" {instruction} "
+    instr_run._r.append(instr)
+
+    separate_run = _formatted_run()
+    fld_sep = OxmlElement("w:fldChar")
+    fld_sep.set(qn("w:fldCharType"), "separate")
+    separate_run._r.append(fld_sep)
+
+    if display_text:
+        _formatted_run(display_text)
+
+    end_run = _formatted_run()
+    fld_end = OxmlElement("w:fldChar")
+    fld_end.set(qn("w:fldCharType"), "end")
+    end_run._r.append(fld_end)
+
+
+def _make_field_rpr(
+    *,
+    font_size_pt: float = 12,
+    east_asia: str = "SimSun",
+    ascii_font: str = "Times New Roman",
+    bold: bool = False,
+):
+    rpr = OxmlElement("w:rPr")
+
+    bold_el = OxmlElement("w:b")
+    bold_el.set(qn("w:val"), "1" if bold else "0")
+    rpr.append(bold_el)
+
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "000000")
+    rpr.append(color)
+
+    size_half_pt = str(int(round(font_size_pt * 2)))
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), size_half_pt)
+    rpr.append(sz)
+
+    sz_cs = OxmlElement("w:szCs")
+    sz_cs.set(qn("w:val"), size_half_pt)
+    rpr.append(sz_cs)
+
+    rfonts = OxmlElement("w:rFonts")
+    rfonts.set(qn("w:eastAsia"), east_asia)
+    rfonts.set(qn("w:ascii"), ascii_font)
+    rfonts.set(qn("w:hAnsi"), ascii_font)
+    rfonts.set(qn("w:cs"), ascii_font)
+    rpr.append(rfonts)
+
+    return rpr
+
+
+def _append_simple_field(
+    paragraph,
+    instruction: str,
+    *,
+    display_text: str = "",
+    font_size_pt: float = 12,
+    east_asia: str = "SimSun",
+    ascii_font: str = "Times New Roman",
+    bold: bool = False,
+) -> None:
+    fld = OxmlElement("w:fldSimple")
+    fld.set(qn("w:instr"), instruction)
+    fld.set(qn("w:dirty"), "true")
+
+    run = OxmlElement("w:r")
+    run.append(
+        _make_field_rpr(
+            font_size_pt=font_size_pt,
+            east_asia=east_asia,
+            ascii_font=ascii_font,
+            bold=bold,
+        )
+    )
+    if display_text:
+        text = OxmlElement("w:t")
+        text.text = display_text
+        run.append(text)
+    fld.append(run)
+    paragraph._p.append(fld)
+
+
 def _add_superscript_text(paragraph, text: str):
     run = paragraph.add_run(text)
     run.font.superscript = True
@@ -760,6 +872,38 @@ def _add_superscript_text(paragraph, text: str):
     run.font.size = Pt(10.5)
     _set_run_rfonts(run, east_asia="SimSun", ascii_font="Times New Roman")
     _set_run_color_black(run)
+
+
+def _clear_paragraph_content(paragraph) -> None:
+    p = paragraph._p
+    for child in list(p):
+        if child.tag == qn("w:pPr"):
+            continue
+        p.remove(child)
+
+
+def _configure_page_number_footers(doc: Document) -> None:
+    for idx, section in enumerate(doc.sections):
+        footer = section.footer
+        if idx > 0 and footer.is_linked_to_previous:
+            footer.is_linked_to_previous = False
+            footer = section.footer
+        paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+        _clear_paragraph_content(paragraph)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
+        paragraph.paragraph_format.first_line_indent = Pt(0)
+        paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+        paragraph.paragraph_format.line_spacing = 1.0
+        _append_simple_field(
+            paragraph,
+            "PAGE \\* MERGEFORMAT",
+            display_text="1",
+            font_size_pt=10.5,
+            east_asia="Times New Roman",
+            ascii_font="Times New Roman",
+        )
 
 
 def _add_text_with_cite_links(paragraph, text: str, ref_nums: set[str]):
@@ -1090,9 +1234,12 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
                     p = doc.add_paragraph()
                     _apply_body_paragraph_format(p, indent=False)
                     p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                    p.paragraph_format.line_spacing = 1.0
                     p.paragraph_format.left_indent = Pt(CODE_RENDER_PARAGRAPH_LEFT_INDENT_PT)
                     p.paragraph_format.space_before = Pt(6 if part_index == 1 else 2)
                     p.paragraph_format.space_after = Pt(2 if part_index < len(rendered_paths) else 6)
+                    p.paragraph_format.keep_together = True
                     run = p.add_run()
                     with Image.open(rendered_path) as code_image:
                         width_px, height_px = code_image.size
@@ -1309,6 +1456,8 @@ def build():
         if idx != len(md_files) - 1:
             _add_page_break(doc)
             page_state["page"] += 1
+
+    _configure_page_number_footers(doc)
 
     out_docx = SETTINGS.output_docx
     try:

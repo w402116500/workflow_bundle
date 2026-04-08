@@ -130,7 +130,7 @@ def run_write_release_summary(config_path: Path, docx_path: Path | None = None) 
 
     resolved_docx_path = docx_path.resolve() if docx_path else resolve_output_docx_path(ctx["config_path"])
     preflight = run_workspace_check(ctx["config_path"])
-    citation_check = inspect_citation_links(resolved_docx_path)
+    citation_check = inspect_citation_links(resolved_docx_path, ctx["config_path"])
     figure_prepare_summary = _load_figure_prepare_summary(paths["figure_prepare_summary_json"])
 
     summary = _build_common_summary(ctx, resolved_docx_path, preflight, figure_prepare_summary)

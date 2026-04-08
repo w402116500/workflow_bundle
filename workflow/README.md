@@ -102,7 +102,7 @@ Linux 下也可以显式使用：
 - `python3 workflow_bundle/tools/cli.py release-preflight --config <workspace.json>` 是统一发布前检查入口；`check_workspace.sh` 现在只是它的兼容别名
 - `python3 workflow_bundle/tools/cli.py sync-workflow-assets --config <workspace.json>` 是本地 workflow 文档和技能副本的同步入口；`refresh-handoff` 不会替代它把 drifted 状态改回 current
 - `python3 workflow_bundle/tools/cli.py release-build --config <workspace.json>` 会自动执行 `release-preflight`、刷新 `figure_map`、构建 DOCX 并写出 build summary
-- `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>` 会自动执行 `release-preflight`、刷新配图、重建 DOCX、校验引用锚点并写出 release summary
+- `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>` 会自动执行 `release-preflight`、刷新配图、重建 DOCX，并校验引用锚点、目录域、页脚页码域、`w:updateFields` 与代码截图段落格式，再写出 release summary
 - `python3 workflow_bundle/tools/cli.py selftest` 会先跑 bundle 内 `workflow/fixtures/fabric_trace_demo/` 的冷启动回归；如传入 `--workspace-config`，再追加真实 workspace 发布回归
 - `bash workflow_bundle/workflow/scripts/check_workspace.sh <workspace.json>` 现在会同时检查 `chapter_queue.json` 中的 `packet_outline_status`，并列出 `stale / legacy / missing` 的阻塞项
 - `bash workflow_bundle/workflow/scripts/check_workspace.sh <workspace.json>` 现在还会显示 `workflow_signature_status`、`lock_status` 和 orchestration skills

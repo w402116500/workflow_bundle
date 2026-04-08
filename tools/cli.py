@@ -49,13 +49,19 @@ def _resolve_config_arg(config: Path | None) -> Path:
 
 
 def _resolve_verify_target(target: str | None) -> Path:
+    return _resolve_verify_inputs(target)[0]
+
+
+def _resolve_verify_inputs(target: str | None) -> tuple[Path, Path | None]:
     if not target:
-        return resolve_output_docx_path(_resolve_config_arg(None))
+        config_path = _resolve_config_arg(None)
+        return resolve_output_docx_path(config_path), config_path
 
     path = Path(target)
     if path.suffix.lower() == ".json":
-        return resolve_output_docx_path(_resolve_config_arg(path))
-    return path
+        config_path = _resolve_config_arg(path)
+        return resolve_output_docx_path(config_path), config_path
+    return path, None
 
 
 def _resolve_postprocess_targets(args: argparse.Namespace) -> tuple[Path | None, Path, Path, str, str]:
@@ -751,7 +757,7 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_release_build_flow(config_path, args.output_name, "release-verify")
             _print_prepare_figures_result(result)
             print(f"docx_path: {result['docx_path']}")
-            verify_status = verify_citation_links(result["docx_path"])
+            verify_status = verify_citation_links(result["docx_path"], config_path)
             if verify_status != 0:
                 _record_workspace_state(
                     config_path,
@@ -783,8 +789,8 @@ def main(argv: list[str] | None = None) -> int:
             print("--output-name is only supported when release-verify builds from a workspace config.", file=sys.stderr)
             return 2
 
-        docx_path = Path(args.target)
-        return verify_citation_links(docx_path)
+        docx_path, verify_config = _resolve_verify_inputs(args.target)
+        return verify_citation_links(docx_path, verify_config)
 
     if args.command == "write-release-summary":
         config_path = _resolve_config_arg(args.config)
@@ -826,7 +832,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "verify":
-        return verify_citation_links(_resolve_verify_target(args.target))
+        docx_path, verify_config = _resolve_verify_inputs(args.target)
+        return verify_citation_links(docx_path, verify_config)
 
     if args.command == "postprocess":
         try:

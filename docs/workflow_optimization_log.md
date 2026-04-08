@@ -4700,3 +4700,44 @@
     - `word/document.xml` now contains a true TOC field block
     - `word/settings.xml` now contains `w:updateFields`
   - This means newly generated base DOCX files can be manually updated in Word without depending on a later Windows-only placeholder replacement step.
+
+## 2026-04-08 13:12:00 +0800
+
+### Step 7
+- Action: Patched the fenced-code screenshot insertion path in `/home/ub/rural_work/workflow_bundle/tools/core/build_final_thesis_docx.py`.
+- Purpose: Code blocks were rendered as screenshot images, but the containing paragraph still inherited the normal body-paragraph format with fixed line spacing, so the “代码截图所在段落” in the generated DOCX did not follow single-line spacing as required.
+- Result:
+  - Changed code-screenshot paragraphs to use single-line spacing instead of the body paragraph fixed spacing.
+  - Kept the existing left indent for code screenshot placement, while marking the paragraph as `keep_together` to reduce split risk.
+  - Verified with a temporary build at `/tmp/rural_toc_test_output/thesis-workspace.docx` that drawing paragraphs generated for code screenshots now serialize as:
+    - `lineRule=auto`
+    - `line=240`
+  - This confirms the screenshot paragraphs now use Word single-line spacing rather than the thesis body fixed spacing.
+
+## 2026-04-08 13:46:00 +0800
+
+### Step 8
+- Action: Patched the DOCX release path in `/home/ub/rural_work/workflow_bundle/tools/core/build_final_thesis_docx.py`, `/home/ub/rural_work/workflow_bundle/tools/core/verify_citation_links.py`, `/home/ub/rural_work/workflow_bundle/tools/cli.py`, `/home/ub/rural_work/workflow_bundle/tools/core/release_summary.py`, `/home/ub/rural_work/workflow_bundle/tools/README.md`, and `/home/ub/rural_work/workflow_bundle/workflow/README.md`.
+- Purpose: The current base DOCX could pass citation verification while still missing page numbers entirely, because the builder never created footer PAGE fields and the verify chain did not inspect footer XML. The workflow needed to generate page-number footers and to fail fast if future DOCX outputs lose those fields again.
+- Result:
+  - Added a footer PAGE field generator for every document section, with centered footer paragraphs and explicit field-code serialization.
+  - Inserted the footer configuration before `doc.save(...)`, so the exported DOCX now writes `word/footer*.xml` parts and section footer references.
+  - Extended `verify` and `release-verify` to check:
+    - real TOC field presence
+    - footer PAGE field presence
+    - `w:updateFields`
+    - code screenshot single-line media paragraphs
+    - expected figure captions declared by workspace figure markers
+  - Updated `release_summary` so the machine-readable verification block captures the stronger DOCX checks.
+  - Documented the stronger release verification contract in both bundle README files so later runs treat page numbers as a formal delivery invariant rather than a manual visual afterthought.
+
+## 2026-04-08 14:02:00 +0800
+
+### Step 9
+- Action: Adjusted the page-number footer serializer in `/home/ub/rural_work/workflow_bundle/tools/core/build_final_thesis_docx.py`.
+- Purpose: The previous footer implementation used a complex PAGE field with a cached display result of `1`. LibreOffice repaginated it correctly, but the user reported that in Word the page numbers could remain stuck at `1` on every page. The workflow needed a more Word-friendly footer field representation.
+- Result:
+  - Replaced the footer PAGE complex field with a simple field form:
+    - `PAGE \\* MERGEFORMAT`
+  - Kept the footer centered, black, and 10.5 磅, while changing only the field serialization strategy.
+  - This makes the exported DOCX closer to the page-number field structure that Word commonly refreshes correctly in headers and footers.
