@@ -163,6 +163,41 @@
 - Continue aligning the workflow around Chapter 6 and Appendix output quality, especially whether their derived tables and appendix entries need richer doc-driven detail from the original Teatrace documents.
 - If the user wants direct thesis推进 instead of more workflow hardening, start executing the next chapter with the cleaned packet chain.
 
+## 2026-04-06 01:28:11 +0800
+
+### Step 1
+- Action: Ran `python3 tools/cli.py intake --project-root /home/ub/rural --title '基于区块链的乡村教育众筹资金明白账系统设计与实现' --out /home/ub/rural_work/rural_education_donation_thesis_workspace` against the new rural education donation project.
+- Purpose: Validate whether the current intake workflow can correctly classify this project before material extraction.
+- Result: Found two workflow defects that materially affected the generated workspace metadata:
+  - `.gocache` directories under the project and chaincode tree were not ignored, which flooded `intake_report.md` detection reasons with cache noise.
+  - The Node.js backend was recognized as `unknown` because `detect_stack()` only looked for Express markers in Java text instead of JS/TS or `package.json`.
+
+### Step 2
+- Action: Patched `tools/core/intake.py`.
+- Purpose: Make intake output accurate enough for downstream `extract`, `scaffold`, and `prepare-writing` on JS + Fabric projects.
+- Result:
+  - Added `.gocache` and `vendor` to `IGNORED_PARTS`.
+  - Deduplicated chain-detection reasons before writing the intake report.
+  - Extended backend stack detection to recognize Express from backend JS/TS source and `package.json`.
+
+### Step 3
+- Action: Ran `python3 -m py_compile tools/core/intake.py` and re-ran the same `intake` command to refresh the workspace.
+- Purpose: Verify the patch is syntactically valid and that the real workspace artifacts are corrected, not just the source file.
+- Result:
+  - Syntax validation passed.
+  - `/home/ub/rural_work/rural_education_donation_thesis_workspace/workflow/configs/project_manifest.json` now reports `backend_framework: "express"`.
+  - `/home/ub/rural_work/rural_education_donation_thesis_workspace/docs/materials/intake_report.md` no longer includes `.gocache`-driven detection noise.
+
+### Current Next Actions
+- Continue the required formal CLI chain for the new workspace:
+  - `extract-code`
+  - `extract`
+  - `scaffold`
+  - `literature`
+  - `prepare-outline`
+  - `prepare-writing`
+- Preserve any still-missing project documents in `missing_inputs` instead of inventing thesis evidence.
+
 ### Step 20
 - Action: Inspected the current Chapter 6 / Appendix packet content, `material_pack.json`, and Teatrace original testing documents.
 - Purpose: Determine why Chapter 6 tables and Appendix indexes still looked generic even after Chapter 5 had been aligned.
@@ -183,6 +218,47 @@
   - Added structured parsing for backend interface design doc routes, database design doc table用途, and chaincode design doc method用途.
   - API appendix entries now carry interface title / permission / table / chaincode hints instead of `source: unknown`.
   - Database appendix now combines数据库设计文档用途 with SQL字段摘要.
+
+## 2026-04-06 02:15:00 +0800
+
+### Step 22
+- Action: Updated `tools/core/project_common.py`, `tools/core/chapter_profile.py`, and `tools/core/extract.py` for the rural education donation workspace, then validated syntax and re-ran the formal workflow chain on the real workspace.
+- Purpose: Generalize the workflow so education-crowdfunding theses can obtain chapter-ready outlines and test assets from the formal generators, instead of relying on traceability-oriented defaults.
+- Result:
+  - Bumped `PROJECT_PROFILE_SCHEMA_VERSION` to `17` to force workspace refresh when chapter structure changes.
+  - Extended the `education_crowdfunding` chapter profile with richer三级小节 for Chapter 1 / 3 / 4 / 6, plus refined Chapter 5 module subfunction labels.
+  - Replaced Chapter 6 required asset titles/section mappings for the education-crowdfunding domain and added `exception-test-table` generation.
+  - Made `tech-stack-summary`, test environment rows, module test case specs, and Chapter 6 derived tables domain-aware for donation transparency / education accountability scenarios.
+  - Re-ran `extract`, `prepare-outline`, `prepare-writing`, `prepare-chapter`, and `start-chapter` on `/home/ub/rural_work/rural_education_donation_thesis_workspace`, and confirmed `check-workspace` passes after regeneration.
+
+### Current Next Actions
+- Keep monitoring whether future education-crowdfunding projects expose stronger test reports; if so, prefer filling Chapter 6 result columns from real reports instead of derived `待补` placeholders.
+- The formal workflow is now ready to support正文 drafting for the refreshed rural education donation workspace without manual outline patching.
+
+### Step 23
+- Action: Added a derived missing-input bridge in `tools/core/extract.py` and re-ran the rural education donation workspace extraction.
+- Purpose: Ensure Chapter 6 testing-evidence shortages are written into formal missing-item artifacts, not only emitted as packet validation warnings.
+- Result:
+  - When fewer than 2 reusable `test-document` assets are found, extraction now appends `missing test evidence documents: fewer than 2 reusable Chapter 6 test docs` to the rendered missing-items output.
+  - The refreshed workspace now exposes this gap consistently in `docs/materials/missing_items.md`, `material_pack.md`, and Chapter 6 writing briefs.
+
+### Step 24
+- Action: Updated `tools/core/intake.py` so document detection better handles English-named implementation/manual-test docs and keeps `requirements` missing unless a real requirements/overview doc exists.
+- Purpose: Prevent the workflow from silently inventing a requirements document category when the project only provides implementation/design materials, while still loading the new docs into the workspace.
+- Result:
+  - `design` detection now accepts filenames such as `backend-implementation.md`, `frontend-implementation.md`, `database-design.md`, `chaincode-design.md`, and `frontend-manual-test.md`.
+  - `requirements` no longer falls back to an arbitrary first markdown file; it now remains missing unless an actual requirements/overview-style doc is present.
+
+### Step 25
+- Action: Updated `tools/core/extract.py` and `tools/core/chapter_profile.py` to support English doc lookup, `docs/assets` screenshot scanning, and screenshot-based Chapter 6 test evidence selection; then re-ran the rural education donation workspace chain.
+- Purpose: Make newly added local docs and screenshots materially improve chapter packets instead of sitting outside the asset pipeline.
+- Result:
+  - `_find_doc_text()` now matches by filename, path, and document content, which lets Chinese-titled markdown inside English filenames drive extraction.
+  - Supporting-doc discovery now also scans `docs/**/*.md` for manual-test/test files.
+  - `_scan_image_candidates()` and demo-evidence summaries now include `docs/assets`.
+  - Manual-test screenshots are classified as `test-screenshot` assets for Chapter 5 / 6 instead of generic supporting images.
+  - Chapter 6’s required “测试章节至少引用 2 项测试证据” contract now accepts generic `test_artifacts`, so screenshots can satisfy the evidence requirement alongside test docs.
+  - After rerunning `intake -> extract-code -> extract -> scaffold -> literature --skip-research-sidecar -> prepare-outline -> prepare-writing`, the workspace now records the new design docs, clears the old `design` missing-input flag, and validates Chapter 6 without the previous evidence warning.
   - Blockchain appendix now prefers documented chaincode methods and no longer leaks internal helper functions as primary appendix entries.
   - Chapter 6 test environment / test case / test result tables now prefer:
     - `backend/TEST_REPORT.md`
@@ -4482,3 +4558,145 @@
       - AI figure review should include a visual check for embedded titles, header/footer text, `Fig.` / `Figure`, and other non-diagram artifacts
 - Validation passed:
   - `python3 /home/ub/thesis_materials/workflow_bundle/tools/cli.py release-verify --config /home/ub/thesis_materials/workspaces/teatrace_thesis/workflow/configs/workspace.json`
+
+## 2026-04-06 01:41:35 +0800
+
+### Step 1
+- Action: Inspected the rural education donation workspace outputs after the earlier intake fix, including `material_pack.json`, `literature_pack.json`, `code_evidence_pack.json`, and `project_profile.json`.
+- Purpose: Verify whether the formal workflow was good enough to continue from the new workspace without additional workflow changes.
+- Result: Found three new workflow quality defects:
+  - `extract` treated this project as a generic traceability/Fabric app instead of an education donation crowdfunding system.
+  - `extract` could not reliably summarize Express API routes or Fabric chaincode responsibilities from the actual JS/Go codebase.
+  - `literature` generated mostly generic Fabric/traceability queries, which produced weak topic alignment for the thesis domain.
+
+### Step 2
+- Action: Updated `tools/core/code_evidence.py`, `tools/core/chapter_profile.py`, `tools/core/extract.py`, `tools/core/writing.py`, and bumped schema versions in `tools/core/project_common.py`.
+- Purpose: Make the workflow materially support JS + Hyperledger Fabric + education crowdfunding / donation transparency projects.
+- Result:
+  - Added a dedicated `education_crowdfunding` domain profile for code evidence extraction and chapter planning.
+  - Added donation-specific core modules, subfunctions, flow labels, and design asset requirements.
+  - Added Express route extraction from JS/TS source.
+  - Added donation-domain objective and business-flow derivation from code + SQL evidence.
+  - Added donation-focused literature queries around crowdfunding, donation transparency, education accountability, and fund usage tracking.
+
+### Step 3
+- Action: Re-ran the new workspace through the formal CLI chain:
+  - `intake`
+  - `extract-code`
+  - `extract`
+  - `scaffold`
+  - `literature`
+  - `prepare-outline`
+  - `prepare-writing`
+- Purpose: Ensure the fixes changed real workspace artifacts, not only source code.
+- Result:
+  - `material_pack.json` now reports `schema_version: 9` and uses education-donation-specific objective and flow summaries.
+  - `project_profile.json` now reports `domain_label: 教育众筹资金明白账`.
+  - `code_evidence_pack.json` now reports `domain_key: education_crowdfunding` and contains non-zero backend/frontend evidence counts for all core modules.
+  - `literature_pack.json` now uses focused donation-transparency / education-accountability query strings and returns more relevant references.
+
+### Step 4
+- Action: Fixed two newly exposed extractor edge cases during rerun.
+- Purpose: Remove infrastructure noise from JS/Fabric scanning so the new domain logic remains stable.
+- Result:
+  - Added `is_file()` / `node_modules` protection to the JS Express API extractor after `extract` hit `backend/node_modules/ipaddr.js`.
+  - Filtered `vendor` / `.gocache` in Fabric chaincode scanning and promoted real chaincode transaction names into `blockchain_design` summaries.
+
+### Step 5
+- Action: Refreshed the affected chapter packets and re-ran workspace checks.
+- Purpose: Clear stale packet state caused by the domain/profile update and confirm the workspace is ready for drafting.
+- Result:
+  - Regenerated `03-需求分析.md`, `04-系统设计.md`, `05-系统实现.md`, and `06-系统测试.md` packets/briefs.
+  - `python3 tools/cli.py check-workspace --config /home/ub/rural_work/rural_education_donation_thesis_workspace/workflow/configs/workspace.json` now passes with no blocking packet issues.
+  - `resume` now points cleanly to `start-chapter --chapter 02-系统开发工具及技术介绍.md`.
+
+## 2026-04-06 09:24:00 +0800
+
+### Step 6
+- Action: Extended `tools/core/extract.py` for the `education_crowdfunding` domain, then re-ran `extract -> prepare-writing -> prepare-chapter(03/04) -> check-workspace` on the rural education donation workspace.
+- Purpose: Remove the last Chapter 4 placeholder-table gap from the formal workflow and clean Chapter 3 role extraction so the writing packets are directly usable for正文 drafting.
+- Result:
+  - Added a dedicated Chapter 4 design-table builder for education crowdfunding projects.
+    - `表4.1 功能模块—设计落点映射` is now derived from the project's project/audit, donation, disbursement, usage, and traceability modules.
+    - `表4.4 角色与审批职责映射` is now emitted as a real `role-matrix` asset instead of a placeholder.
+  - Added role normalization for the education crowdfunding domain so noisy raw tokens such as `donor`, `admin`, `school`, and `用户` collapse into thesis-facing role labels.
+  - Regenerated outputs now validate cleanly:
+    - `docs/writing/chapter_briefs/03-需求分析.md` now shows clean role rows and `roles detected: 管理员, 监管方, 捐赠人, 审核人, 学校执行方, 项目申报人, 拨付审批人, 资金使用上报人`
+    - `docs/writing/chapter_briefs/04-系统设计.md` now has `validation_status: ok` with both required Chapter 4 tables materialized
+  - `python3 /home/ub/rural_work/workflow_bundle/tools/cli.py check-workspace --config /home/ub/rural_work/rural_education_donation_thesis_workspace/workflow/configs/workspace.json` passes after the refresh.
+
+## 2026-04-06 12:14:50 +0800
+
+### Step 1
+- Action: Updated `/home/ub/rural_work/workflow_bundle/tools/core/figure_assets.py` and synced root compatibility wrappers with `workflow/scripts/sync_root_compat.sh`.
+- Purpose: Make the formal workflow generate Chapter 4 design figures for the rural education donation thesis instead of leaving `4.1/4.2` missing and reusing old traceability flow content for `4.3/4.4/4.5`.
+- Result:
+  - Added deterministic local figure renderers for `图4.1 系统总体架构图` and `图4.2 数据库E-R图`.
+  - Replaced the old traceability-oriented flow generation with education-crowdfunding-specific Chapter 4 business flow diagrams for `图4.3` to `图4.5`.
+  - Kept `图5.1` on the existing local function-structure renderer, so the full `4.1` to `5.1` chain now builds without relying on remote Mermaid rendering.
+
+### Step 2
+- Action: Patched the rural education donation workspace source-of-truth chapter at `/home/ub/rural_work/rural_education_donation_thesis_workspace/polished_v3/04-系统设计.md`.
+- Purpose: Insert workflow-readable hidden figure markers for `4.1` and `4.2` so the newly generated assets are actually embedded into the DOCX instead of staying only on disk.
+- Result:
+  - Added `<!-- figure: 4.1 -->` below `图4.1 系统总体架构图`.
+  - Added `<!-- figure: 4.2 -->` below `图4.2 数据库E-R图`.
+  - Removed the temporary `missing diagram source for figure 4.1/4.2` lines from `docs/materials/missing_items.md`, because these figures are now formally inferred by workflow.
+
+### Step 3
+- Action: Re-ran the official publish chain:
+  - `python3 /home/ub/rural_work/workflow_bundle/tools/cli.py release-build --config /home/ub/rural_work/rural_education_donation_thesis_workspace/workflow/configs/workspace.json`
+  - `python3 /home/ub/rural_work/workflow_bundle/tools/cli.py release-verify --config /home/ub/rural_work/rural_education_donation_thesis_workspace/workflow/configs/workspace.json`
+- Purpose: Validate that the patched workflow really regenerates and inserts the new figures into the current thesis workspace.
+- Result:
+  - `word_output/figure_insert_log.csv` now includes `图4.1 系统总体架构图`, `图4.2 数据库E-R图`, `图4.3 项目申报与审核流程图`, `图4.4 公益捐赠与资金拨付流程图`, `图4.5 资金使用上报与链上追溯流程图`, and `图5.1 系统功能结构图`.
+  - `word_output/thesis-workspace.docx` was rebuilt successfully with the updated figure set.
+  - `word_output/release_summary.json` still reports `anchors missing bookmarks: 0`, so citation verification remains clean after the figure refresh.
+
+## 2026-04-07 16:43:00 +0800
+
+### Step 4
+- Action: Refined the deterministic Chapter 4 architecture renderer in `/home/ub/rural_work/workflow_bundle/tools/core/figure_assets.py`.
+- Purpose: The previous `图4.1 系统总体架构图` had drifted away from strict project evidence because it was later overridden by an AI image prompt, and even the deterministic fallback still mixed in excess English labels and a not-yet-fully-integrated completion table. The workflow needed an evidence-based fallback that matches the actual project structure and the user's wording constraints.
+- Result:
+  - Raised the deterministic renderer signature for `图4.1` so the figure is forced to regenerate.
+  - Rewrote the deterministic architecture figure text to:
+    - remove slash-heavy labels
+    - remove non-essential English
+    - keep only technical proper names such as `Vue 3`, `Vite`, `Element Plus`, `Node.js`, `Express`, `MySQL`, `Hyperledger Fabric`, and `donationtrace`
+  - Replaced generic or over-claimed content with evidence-based labels:
+    - user roles now use Chinese-only role groups
+    - the backend is described as unified business service plus blockchain adapter and file-hash handling
+    - the data layer now focuses on actual running data categories instead of foregrounding `project_completions`
+    - the data layer explicitly states that the trace page currently reads mainly from database aggregation
+    - the chain layer now states donation and usage notarization capability without implying that all trace queries are directly chain-driven
+
+## 2026-04-07 18:35:00 +0800
+
+### Step 5
+- Action: Updated `/home/ub/rural_work/workflow_bundle/tools/core/figure_assets.py` to redesign the deterministic `pillow-er` renderer for `图4.2 数据库E-R图`.
+- Purpose: The previous renderer produced a table-relationship diagram with field-list boxes, which did not match the user's requirement for a traditional E-R figure.
+- Result:
+  - Replaced the old table-relationship layout with a Chen-style monochrome E-R renderer.
+  - The new renderer uses entity rectangles, relationship diamonds, attribute ellipses, key-attribute underlines, and explicit cardinality markers.
+  - The figure content now uses concept-level Chinese entity and attribute labels derived from the actual project database evidence instead of raw table-schema boxes.
+
+### Current Next Actions
+- Sync the root compatibility mirror from `workflow_bundle/tools/core`.
+- Re-run `prepare-figures` and `release-verify` on the rural education donation workspace.
+- Visually inspect the regenerated `图4.2` and confirm that the published DOCX now uses the traditional E-R figure.
+
+## 2026-04-08 12:58:00 +0800
+
+### Step 6
+- Action: Patched `/home/ub/rural_work/workflow_bundle/tools/core/build_final_thesis_docx.py` so the generated DOCX writes a real Word table-of-contents field instead of a plain placeholder sentence.
+- Purpose: The current Linux delivery artifact contained only the literal text `（请在 Word 中插入“目录”，并更新域以生成目录。）`, so users could not right-click `更新域` because there was no field object at the TOC location at all.
+- Result:
+  - Replaced the placeholder-only TOC paragraph with a real field code:
+    - `TOC \\o "1-3" \\h \\z \\u`
+  - Marked the TOC field dirty so Word recognizes it as needing refresh.
+  - Added `w:updateFields w:val="true"` to document settings so Word is prompted to refresh fields on open.
+  - Verified with a temporary build at `/tmp/rural_toc_test_output/thesis-workspace.docx` that:
+    - `word/document.xml` now contains a true TOC field block
+    - `word/settings.xml` now contains `w:updateFields`
+  - This means newly generated base DOCX files can be manually updated in Word without depending on a later Windows-only placeholder replacement step.

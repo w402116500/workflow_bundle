@@ -435,9 +435,47 @@ def _configure_styles(doc: Document):
 
 
 def _add_toc(doc: Document):
-    p = doc.add_paragraph("（请在 Word 中插入“目录”，并更新域以生成目录。）")
-    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    p = doc.add_paragraph()
+    pf = p.paragraph_format
+    pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    pf.line_spacing = Pt(LINE_SPACING_PT)
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(0)
+    pf.first_line_indent = Pt(0)
+
+    container = p._p
+
+    r_begin = OxmlElement("w:r")
+    fc_begin = OxmlElement("w:fldChar")
+    fc_begin.set(qn("w:fldCharType"), "begin")
+    fc_begin.set(qn("w:dirty"), "true")
+    r_begin.append(fc_begin)
+    container.append(r_begin)
+
+    r_instr = OxmlElement("w:r")
+    instr = OxmlElement("w:instrText")
+    instr.set(qn("xml:space"), "preserve")
+    instr.text = ' TOC \\o "1-3" \\h \\z \\u '
+    r_instr.append(instr)
+    container.append(r_instr)
+
+    r_sep = OxmlElement("w:r")
+    fc_sep = OxmlElement("w:fldChar")
+    fc_sep.set(qn("w:fldCharType"), "separate")
+    r_sep.append(fc_sep)
+    container.append(r_sep)
+
+    hint_run = p.add_run("右键单击此处更新目录")
+    hint_run.font.size = Pt(12)
+    hint_run.font.bold = False
+    _set_run_rfonts(hint_run, east_asia="SimSun", ascii_font="Times New Roman")
+    _set_run_color_black(hint_run)
+
+    r_end = OxmlElement("w:r")
+    fc_end = OxmlElement("w:fldChar")
+    fc_end.set(qn("w:fldCharType"), "end")
+    r_end.append(fc_end)
+    container.append(r_end)
 
 
 def _apply_body_paragraph_format(paragraph, indent: bool = True):
@@ -458,6 +496,17 @@ def _fix_zoom_percent(doc: Document):
         settings.insert(0, zoom)
     if zoom.get(qn("w:percent")) is None:
         zoom.set(qn("w:percent"), "100")
+
+
+def _ensure_update_fields_on_open(doc: Document):
+    settings = doc.settings.element
+    update = settings.find(qn("w:updateFields"))
+    if update is None:
+        update = OxmlElement("w:updateFields")
+        update.set(qn("w:val"), "true")
+        settings.append(update)
+    else:
+        update.set(qn("w:val"), "true")
 
 
 def _add_page_break(doc: Document):
@@ -1210,6 +1259,7 @@ def build():
     _configure_page(doc)
     _configure_styles(doc)
     _fix_zoom_percent(doc)
+    _ensure_update_fields_on_open(doc)
 
     page_state = {"page": 1}
     bookmark_state = {"next_id": 1}
