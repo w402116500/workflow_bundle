@@ -7,6 +7,7 @@
   - 若输出 `workflow_signature_status: drifted`：`python3 workflow_bundle/tools/cli.py sync-workflow-assets --config <workspace.json>`
   - 如需刷新 handoff：`python3 workflow_bundle/tools/cli.py refresh-handoff --config <workspace.json>`
   - 如需先准备 AI 插图：`python3 workflow_bundle/tools/cli.py prepare-ai-figures --config <workspace.json>`
+  - 如需显式生成本地 `dbdia` E-R 图：先在 workspace config 中补 `er_figure_specs`，再执行 `python3 workflow_bundle/tools/cli.py prepare-figures --config <workspace.json>`
   - 进入发布链路：`python3 workflow_bundle/tools/cli.py release-preflight --config <workspace.json>` -> `python3 workflow_bundle/tools/cli.py release-build --config <workspace.json>` -> `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>`
   - 回归当前 bundle：`python3 workflow_bundle/tools/cli.py selftest`
   - 回归 bundle + 真实 workspace：`python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`
@@ -106,3 +107,5 @@
 - `workflow_signature_status` 以 workspace 本地 `docs/workflow/workflow_assets_state.json` 为准，不再以 handoff 更新时间代替同步状态。
 - `refresh-handoff` 只刷新 handoff 快照，不会把 `workflow_signature_status: drifted` 自动改回 `current`。
 - `build_release.sh`、`verify_release.sh`、`check_workspace.sh`、`selftest.sh` 仍可继续使用，但它们现在都是 CLI 官方入口的兼容包装层。
+- `figure_map` 是输出登记表；如需显式启用本地 E-R 图，使用 `er_figure_specs` 而不是手工长期编辑 `figure_map`
+- `dbdia-er` 依赖 bundle 内 vendored `dbdia + Graphviz WASM`，首次干净运行需要本机可用 `java/javac` 与 `node/npm`

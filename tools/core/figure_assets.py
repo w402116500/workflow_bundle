@@ -4,12 +4,14 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import subprocess
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import cairosvg
 from PIL import Image, ImageDraw, ImageFont
 
 from core.ai_image_generation import ai_override_blocking_entries, ai_override_map
@@ -17,10 +19,30 @@ from core.page_screenshot_assets import stage_chapter5_test_screenshots
 from core.project_common import load_workspace_context, make_relative, material_output_paths, read_json, write_json
 
 
+THIS_ROOT = Path(__file__).resolve().parents[2]
+if THIS_ROOT.name == "workflow_bundle":
+    PRIMARY_WORKFLOW_ROOT = THIS_ROOT
+else:
+    PRIMARY_WORKFLOW_ROOT = THIS_ROOT / "workflow_bundle" if (THIS_ROOT / "workflow_bundle").exists() else THIS_ROOT
+
+VENDOR_ROOT = PRIMARY_WORKFLOW_ROOT / "vendor"
+DBDIA_VENDOR_ROOT = VENDOR_ROOT / "dbdia"
+DBDIA_UPSTREAM_ROOT = DBDIA_VENDOR_ROOT / "upstream"
+DBDIA_SOURCE_ROOT = DBDIA_UPSTREAM_ROOT / "src" / "main" / "java"
+DBDIA_BUILD_ROOT = DBDIA_VENDOR_ROOT / "build"
+DBDIA_CLASSES_DIR = DBDIA_BUILD_ROOT / "classes"
+DBDIA_COMPILE_STAMP = DBDIA_BUILD_ROOT / "compile.ok"
+DBDIA_ANTLR_RUNTIME_VERSION = "4.8-1"
+DBDIA_ANTLR_RUNTIME_JAR = DBDIA_VENDOR_ROOT / "lib" / f"antlr4-runtime-{DBDIA_ANTLR_RUNTIME_VERSION}.jar"
+GRAPHVIZ_WASM_VENDOR_ROOT = VENDOR_ROOT / "graphviz_wasm"
+GRAPHVIZ_RENDER_SCRIPT = GRAPHVIZ_WASM_VENDOR_ROOT / "render_dot.mjs"
+
 MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)\n```", re.S)
 HEADING_L2_RE = re.compile(r"^##\s+5\.(?P<num>\d+)\s+(?P<title>.+?)\s*$")
 HEADING_L3_RE = re.compile(r"^###\s+5\.\d+\.\d+\s+(?P<title>.+?)\s*$")
 FUNCTION_STRUCTURE_RENDERER_VERSION = "v2-monochrome-module-tree"
+DBDIA_ER_RENDERER_VERSION = "v1-generic-dbdia-chen-vendor-vizjs"
+SVG_RENDER_WIDTH_PX = 1665
 
 
 @dataclass(frozen=True)
@@ -155,6 +177,136 @@ def _arrow(
     p3 = (x2 + head * math.cos(a1), y2 + head * math.sin(a1))
     p4 = (x2 + head * math.cos(a2), y2 + head * math.sin(a2))
     draw.polygon([p2, p3, p4], fill=color)
+
+
+def _write_text_if_changed(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        try:
+            if path.read_text(encoding="utf-8") == text:
+                return
+        except Exception:
+            pass
+    path.write_text(text, encoding="utf-8")
+
+
+def _run_checked(command: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None, label: str) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        command,
+        cwd=str(cwd) if cwd else None,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        stdout = (completed.stdout or "").strip()
+        stderr = (completed.stderr or "").strip()
+        details = "\n".join(part for part in [stdout, stderr] if part)
+        raise RuntimeError(f"{label} failed with exit code {completed.returncode}: {details or command}")
+    return completed
+
+
+def _resolve_java_tool(name: str) -> str:
+    candidate = shutil.which(name)
+    if candidate:
+        return candidate
+    fallback = Path("/usr/local/jdk1.8.0_201/bin") / name
+    if fallback.exists():
+        return str(fallback)
+    raise RuntimeError(f"required Java tool not found: {name}")
+
+
+def _preferred_dbdia_font_name() -> str:
+    candidates = [
+        ("WenQuanYi Zen Hei", "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+        ("Noto Sans CJK SC", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        ("Microsoft YaHei", "/usr/share/fonts/truetype/msyh/msyh.ttc"),
+        ("SimHei", "/usr/share/fonts/truetype/arphic/ukai.ttc"),
+        ("DejaVu Sans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    ]
+    for font_name, font_path in candidates:
+        if Path(font_path).exists():
+            return font_name
+    return "DejaVu Sans"
+
+
+def _figure_no_slug(figure_no: str) -> str:
+    return re.sub(r"[^0-9A-Za-z]+", "-", str(figure_no)).strip("-").lower() or "figure"
+
+
+def _resolve_workspace_path(workspace_root: Path, raw_path: str) -> Path:
+    candidate = Path(raw_path)
+    return candidate.resolve() if candidate.is_absolute() else (workspace_root / candidate).resolve()
+
+
+def _default_er_output_name(figure_no: str) -> str:
+    return f"generated/fig{_figure_no_slug(figure_no)}-er-diagram.png"
+
+
+def _build_configured_er_specs(config: dict[str, Any], workspace_root: Path) -> dict[str, FigureSpec]:
+    raw_specs = config.get("er_figure_specs") or {}
+    if not isinstance(raw_specs, dict):
+        raise RuntimeError("er_figure_specs must be an object keyed by figure number")
+
+    existing_figure_map = config.get("figure_map") or {}
+    explicit_specs: dict[str, FigureSpec] = {}
+    for raw_figure_no, raw_spec in raw_specs.items():
+        figure_no = str(raw_figure_no).strip()
+        if not figure_no:
+            raise RuntimeError("er_figure_specs contains an empty figure number key")
+        if not isinstance(raw_spec, dict):
+            raise RuntimeError(f"er_figure_specs.{figure_no} must be an object")
+        if raw_spec.get("enabled", True) is False:
+            continue
+
+        source_rel = str(raw_spec.get("source_path") or "").strip()
+        if not source_rel:
+            raise RuntimeError(f"er_figure_specs.{figure_no}.source_path is required")
+        source_path = _resolve_workspace_path(workspace_root, source_rel)
+        if not source_path.exists():
+            raise RuntimeError(f"er_figure_specs.{figure_no}.source_path not found: {source_path}")
+
+        caption = str(raw_spec.get("caption") or "").strip()
+        if not caption:
+            existing_cfg = existing_figure_map.get(figure_no, {}) if isinstance(existing_figure_map.get(figure_no), dict) else {}
+            caption = str(existing_cfg.get("caption") or "").strip()
+        if not caption:
+            raise RuntimeError(f"er_figure_specs.{figure_no}.caption is required")
+
+        output_name = str(raw_spec.get("output_name") or "").strip() or _default_er_output_name(figure_no)
+        if Path(output_name).is_absolute():
+            raise RuntimeError(f"er_figure_specs.{figure_no}.output_name must be relative to build.diagram_dir")
+
+        explicit_specs[figure_no] = FigureSpec(
+            figure_no=figure_no,
+            caption=caption,
+            output_name=output_name,
+            code=source_path.read_text(encoding="utf-8", errors="replace"),
+            renderer="dbdia-er",
+            source_paths=(source_path,),
+        )
+    return explicit_specs
+
+
+def _merge_explicit_specs(default_specs: list[FigureSpec], explicit_specs: dict[str, FigureSpec]) -> list[FigureSpec]:
+    if not explicit_specs:
+        return default_specs
+
+    merged: list[FigureSpec] = []
+    replaced: set[str] = set()
+    for spec in default_specs:
+        override = explicit_specs.get(spec.figure_no)
+        if override is not None:
+            merged.append(override)
+            replaced.add(spec.figure_no)
+        else:
+            merged.append(spec)
+
+    for figure_no, spec in explicit_specs.items():
+        if figure_no not in replaced:
+            merged.append(spec)
+    return merged
 
 
 def _extract_chapter5_modules(chapter_path: Path) -> list[tuple[str, list[str]]]:
@@ -399,10 +551,143 @@ def _render_function_structure_png(project_title: str, chapter5_path: Path, outp
     image.save(output_path)
 
 
+def _ensure_dbdia_runtime() -> tuple[Path, Path]:
+    if not DBDIA_SOURCE_ROOT.exists():
+        raise RuntimeError(f"dbdia vendor source is missing: {DBDIA_SOURCE_ROOT}")
+    if not DBDIA_ANTLR_RUNTIME_JAR.exists():
+        raise RuntimeError(f"antlr runtime jar is missing: {DBDIA_ANTLR_RUNTIME_JAR}")
+
+    sources = sorted(path for path in DBDIA_SOURCE_ROOT.rglob("*.java") if not path.name.endswith("Test.java"))
+    if not sources:
+        raise RuntimeError(f"no dbdia Java sources found under {DBDIA_SOURCE_ROOT}")
+
+    needs_compile = not DBDIA_COMPILE_STAMP.exists() or not DBDIA_CLASSES_DIR.exists()
+    if not needs_compile:
+        stamp_mtime = DBDIA_COMPILE_STAMP.stat().st_mtime
+        latest_input = max([path.stat().st_mtime for path in sources] + [DBDIA_ANTLR_RUNTIME_JAR.stat().st_mtime])
+        needs_compile = latest_input > stamp_mtime
+
+    if needs_compile:
+        if DBDIA_CLASSES_DIR.exists():
+            shutil.rmtree(DBDIA_CLASSES_DIR)
+        DBDIA_CLASSES_DIR.mkdir(parents=True, exist_ok=True)
+        javac = _resolve_java_tool("javac")
+        source_list_path = DBDIA_BUILD_ROOT / "sources.txt"
+        source_list_path.parent.mkdir(parents=True, exist_ok=True)
+        source_list_path.write_text("\n".join(str(path) for path in sources) + "\n", encoding="utf-8")
+        _run_checked(
+            [
+                javac,
+                "-encoding",
+                "UTF-8",
+                "-cp",
+                str(DBDIA_ANTLR_RUNTIME_JAR),
+                "-d",
+                str(DBDIA_CLASSES_DIR),
+                f"@{source_list_path}",
+            ],
+            label="dbdia javac compile",
+        )
+        DBDIA_COMPILE_STAMP.write_text(_now_iso() + "\n", encoding="utf-8")
+
+    return DBDIA_CLASSES_DIR, DBDIA_ANTLR_RUNTIME_JAR
+
+
+def _ensure_graphviz_wasm_runtime() -> None:
+    if not GRAPHVIZ_RENDER_SCRIPT.exists():
+        raise RuntimeError(f"graphviz render script is missing: {GRAPHVIZ_RENDER_SCRIPT}")
+    lockfile = GRAPHVIZ_WASM_VENDOR_ROOT / "package-lock.json"
+    if not lockfile.exists():
+        raise RuntimeError(f"graphviz wasm lockfile is missing: {lockfile}")
+    viz_module = GRAPHVIZ_WASM_VENDOR_ROOT / "node_modules" / "@viz-js" / "viz"
+    if viz_module.exists():
+        return
+    npm = shutil.which("npm")
+    if not npm:
+        raise RuntimeError("npm is required to install the local Graphviz WASM renderer")
+    _run_checked(
+        [npm, "ci", "--silent", "--no-fund", "--no-audit"],
+        cwd=GRAPHVIZ_WASM_VENDOR_ROOT,
+        label="graphviz wasm npm ci",
+    )
+
+
+def _patch_dbdia_dot(dot_text: str) -> str:
+    replacements = {
+        '  layout="dot"\n': '  layout="dot"\n  nodesep="0.32"\n  ranksep="0.56"\n  pad="0.06"\n  margin="0.03"\n',
+        '  node [\n': '  node [\n    margin="0.10,0.06"\n',
+    }
+    patched = dot_text
+    for source, target in replacements.items():
+        if source in patched:
+            patched = patched.replace(source, target, 1)
+    return patched
+
+
+def _render_dbdia_er_diagram_png(spec: FigureSpec, output_path: Path, workspace_root: Path) -> None:
+    classes_dir, antlr_jar = _ensure_dbdia_runtime()
+    _ensure_graphviz_wasm_runtime()
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    stem = Path(spec.output_name).stem
+    sidecar_dir = workspace_root / "docs" / "images" / "generated_src"
+    dsl_path = sidecar_dir / f"{stem}.dbdia"
+    dot_path = sidecar_dir / f"{stem}.dot"
+    svg_path = sidecar_dir / f"{stem}.svg"
+
+    dsl_code = spec.code.strip() + "\n"
+    _write_text_if_changed(dsl_path, dsl_code)
+
+    java = _resolve_java_tool("java")
+    classpath = f"{classes_dir}:{antlr_jar}"
+    _run_checked(
+        [
+            java,
+            "-cp",
+            classpath,
+            "dbdia.Main",
+            "-info=_",
+            "-format=none",
+            f"-fontname={_preferred_dbdia_font_name()}",
+            "-fontsize=16",
+            "-rankdir=LR",
+            "-splines=line",
+            "-layout=dot",
+            "-color=black",
+            "-fillcolor=white",
+            "-fontcolor=black",
+            "-style=filled",
+            "er",
+            str(dsl_path),
+            str(dot_path),
+        ],
+        label="dbdia er dot generation",
+    )
+
+    patched_dot = _patch_dbdia_dot(dot_path.read_text(encoding="utf-8"))
+    _write_text_if_changed(dot_path, patched_dot)
+
+    _run_checked(
+        ["node", str(GRAPHVIZ_RENDER_SCRIPT), str(dot_path), str(svg_path), "dot"],
+        cwd=GRAPHVIZ_WASM_VENDOR_ROOT,
+        label="graphviz wasm svg render",
+    )
+
+    cairosvg.svg2png(url=str(svg_path), write_to=str(output_path), output_width=SVG_RENDER_WIDTH_PX)
+    with Image.open(output_path) as image:
+        if image.mode == "RGBA":
+            canvas = Image.new("RGB", image.size, (255, 255, 255))
+            canvas.paste(image, mask=image.getchannel("A"))
+            canvas.save(output_path)
+        else:
+            image.convert("RGB").save(output_path)
+
+
 def _build_specs(config: dict[str, Any], manifest: dict[str, Any], workspace_root: Path) -> list[FigureSpec]:
     docs = _iter_manifest_documents(manifest)
     overview_doc = _pick_doc_by_keyword(docs, "总体项目文档")
     database_doc = _pick_doc_by_keyword(docs, "数据库设计文档")
+    explicit_er_specs = _build_configured_er_specs(config, workspace_root)
 
     overview_blocks = _extract_mermaid_blocks(overview_doc) if overview_doc else []
     database_blocks = _extract_mermaid_blocks(database_doc) if database_doc else []
@@ -460,7 +745,7 @@ def _build_specs(config: dict[str, Any], manifest: dict[str, Any], workspace_roo
     if flowchart and not any(spec.figure_no == "4.4" and spec.code == flowchart.code for spec in specs):
         # Keep the original end-to-end business flow as an auxiliary fallback for future projects.
         pass
-    return specs
+    return _merge_explicit_specs(specs, explicit_er_specs)
 
 
 def _figure_spec_hash(spec: FigureSpec, config: dict[str, Any], manifest: dict[str, Any], workspace_root: Path) -> str:
@@ -476,6 +761,11 @@ def _figure_spec_hash(spec: FigureSpec, config: dict[str, Any], manifest: dict[s
         payload["renderer_version"] = FUNCTION_STRUCTURE_RENDERER_VERSION
         payload["project_title"] = project_title
         payload["modules"] = _extract_chapter5_modules(chapter5_path) if chapter5_path.exists() else []
+    elif spec.renderer == "dbdia-er":
+        payload["renderer_version"] = DBDIA_ER_RENDERER_VERSION
+        payload["project_title"] = config.get("metadata", {}).get("title") or manifest.get("title", "系统图")
+        payload["font_name"] = _preferred_dbdia_font_name()
+        payload["code"] = spec.code
     else:
         payload["code"] = spec.code
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
@@ -559,6 +849,8 @@ def run_prepare_figures(config_path: Path) -> dict[str, Any]:
                 chapter5_path = workspace_root / config.get("build", {}).get("input_dir", "polished_v3") / "05-系统实现.md"
                 project_title = config.get("metadata", {}).get("title") or manifest.get("title", "系统功能结构图")
                 _render_function_structure_png(project_title, chapter5_path, output_path)
+            elif spec.renderer == "dbdia-er":
+                _render_dbdia_er_diagram_png(spec, output_path, workspace_root)
             else:
                 _render_mermaid_png(spec.code, output_path)
         figure_map[spec.figure_no] = {

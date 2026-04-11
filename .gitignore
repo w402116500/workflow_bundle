@@ -1,7 +1,13 @@
 __pycache__/
 *.pyc
 *.pyo
+*.class
 
 .DS_Store
 
 workflow/configs/active_workspace.json
+
+# figure runtime cache
+vendor/dbdia/build/
+vendor/graphviz_wasm/node_modules/
+vendor/plantuml/

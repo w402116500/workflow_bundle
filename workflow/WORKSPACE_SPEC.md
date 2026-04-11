@@ -97,6 +97,7 @@
     "auto_generate_on_prepare_figures": false
   },
   "ai_figure_specs": {},
+  "er_figure_specs": {},
   "figure_map": {},
   "metadata": {
     "project_root": "/abs/path/to/project",
@@ -133,6 +134,13 @@
   `style_notes` 用于补充对参考图风格、布局方式、线框样式、图标使用边界等具体要求。
   AI 图默认应只生成图主体本身，不在 PNG 内嵌图号、图题、章节名、页眉页脚或 `Fig.` / `Figure`。论文题注由正文和导出流程统一插入。
   `enabled=false` 可用于按图号关闭 AI 覆盖并回退到 `prepare-figures` 的确定性生成结果，适合额度不足、质量不稳或该图不适合 AI 生成的场景。
+- `er_figure_specs` 用于按图号显式声明哪些 E-R 图走本地 `dbdia-er`。该字段是**输入配置**，适合需要传统 Chen 风格 E-R 图、且不想依赖 Mermaid `erDiagram` 自动提取的项目。
+  常用字段包括：
+  - `caption`
+  - `source_path`
+  - `enabled`
+  - `output_name`（可选，默认 `generated/fig<图号>-er-diagram.png`）
+  `source_path` 指向 workspace 根目录相对路径下的 `.dbdia` 源文件；启用后 `prepare-figures` 会在 `docs/images/generated_src/` 额外写出 `.dbdia/.dot/.svg` 侧车文件。
 - `postprocess` 段用于声明 Windows Word 终排输出位置，默认会写到 `final/`，不与 `word_output/` 中的基础排版稿混放。
 - `workflow_state` 段用于声明工作流状态文件位置，包括冷启动 handoff 和 workspace 执行日志。
 - `workflow_state.workspace_lock_json` 用于串行化同一 workspace 的变更型命令，避免多会话并发改写。

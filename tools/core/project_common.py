@@ -213,6 +213,7 @@ def build_workspace_config(project_root: Path, title: str, workspace_root: Path,
             "auto_generate_on_prepare_figures": False,
         },
         "ai_figure_specs": {},
+        "er_figure_specs": {},
         "figure_map": {},
         "metadata": {
             "project_root": str(project_root.resolve()),

@@ -4741,3 +4741,22 @@
     - `PAGE \\* MERGEFORMAT`
   - Kept the footer centered, black, and 10.5 磅, while changing only the field serialization strategy.
   - This makes the exported DOCX closer to the page-number field structure that Word commonly refreshes correctly in headers and footers.
+
+## 2026-04-11 11:52:29 +0800
+
+### Step 10
+- Action: Introduced a generic `dbdia-er` workflow path for deterministic E-R figures.
+- Purpose: The previous experimental E-R work was tied to one specific thesis project. The remote workflow needs a reusable, opt-in capability that does not change default behavior for existing workspaces.
+- Result:
+  - Added vendored `dbdia` + `graphviz_wasm` runtime assets under `vendor/`.
+  - Extended `prepare-figures` so workspace configs can declare `er_figure_specs` keyed by figure number.
+  - Kept `figure_map` as an output registry only; explicit E-R input now comes from `er_figure_specs`.
+  - Enabled `.dbdia -> .dot -> .svg -> .png` generation with sidecar artifacts under `docs/images/generated_src/`.
+
+### Step 11
+- Action: Added generic regression coverage and submission-oriented docs for the E-R workflow.
+- Purpose: Ensure the new capability can be replayed in bundle selftest without relying on a user-specific workspace, and document exactly how to enable it.
+- Result:
+  - Updated fixture selftest to inject a minimal `.dbdia` source and verify `dbdia-er` output plus sidecar assets.
+  - Updated README/spec/testing/command-map docs to describe `er_figure_specs`, vendored runtime requirements, and cache recovery expectations.
+  - Updated `.gitignore` so vendor build caches and local install artifacts stay out of git.

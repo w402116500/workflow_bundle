@@ -69,6 +69,7 @@
     "keywords_cn": "FISCO BCOS；区块链；健康档案；访问控制；存证审计",
     "keywords_en": "FISCO BCOS; blockchain; health record; access control; notarization and audit"
   },
+  "er_figure_specs": {},
   "figure_map": {
     "3.1": {
       "caption": "图3.1 系统用例图",

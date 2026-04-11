@@ -76,6 +76,24 @@
 - 抽查 AI PNG 时，图内不应出现图号、图题、章节标题、页眉页脚、`Fig.` / `Figure`、边缘竖排标签或其他非图主体装饰文字
 - 若某张图因为额度不足或质量不合格改回确定性生成，应验证该图号在 `figure_map` 中已切回 `renderer=mermaid` 或其他非 `ai-image` 渲染器，同时其他 AI 图号保持不变
 
+### 2.4 通用 E-R (`dbdia-er`) 回归
+
+仅在本轮改动涉及 `er_figure_specs`、`prepare-figures` 的确定性 E-R 渲染、或 vendored `dbdia/graphviz_wasm` 运行时时执行。
+
+固定命令：
+
+- `rm -rf workflow_bundle/vendor/dbdia/build`
+- `rm -rf workflow_bundle/vendor/graphviz_wasm/node_modules`
+- `python3 workflow_bundle/tools/cli.py prepare-figures --config <workspace.json>`
+- `python3 workflow_bundle/tools/cli.py selftest`
+
+固定断言：
+
+- 未声明 `er_figure_specs` 的项目仍保持原有 Mermaid / fallback 行为，不会因为标题或项目类型自动切到 `dbdia-er`
+- 已声明且启用的 `er_figure_specs.<fig>` 会写回 `figure_map.<fig>.renderer = dbdia-er`
+- 对应 `docs/images/generated_src/<stem>.dbdia/.dot/.svg` 存在
+- 删除 `vendor/dbdia/build/` 和 `vendor/graphviz_wasm/node_modules/` 后，工作流仍可自动恢复运行时并重新生成 E-R 图
+
 ## 3. 失败时如何解释
 
 `selftest` 不会替你自动修复以下状态，而是直接失败并给出下一条命令：

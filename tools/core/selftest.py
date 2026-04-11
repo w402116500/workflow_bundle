@@ -20,7 +20,7 @@ THIS_ROOT = Path(__file__).resolve().parents[2]
 if THIS_ROOT.name == "workflow_bundle":
     PRIMARY_WORKFLOW_ROOT = THIS_ROOT
 else:
-    PRIMARY_WORKFLOW_ROOT = THIS_ROOT / "workflow_bundle"
+    PRIMARY_WORKFLOW_ROOT = THIS_ROOT / "workflow_bundle" if (THIS_ROOT / "workflow_bundle").exists() else THIS_ROOT
 
 FIXTURE_PROJECT_ROOT = PRIMARY_WORKFLOW_ROOT / "workflow" / "fixtures" / "fabric_trace_demo"
 SELFTEST_DOCX_NAME = "selftest_release.docx"
@@ -40,6 +40,7 @@ CHAPTER6_PACKET_EXPECTED = [
     "For chapter 6, follow the sample-like testing chapter pattern rather than a compressed summary style.",
     "Section 6.2 must keep one dedicated function-test subsection per core module, and each subsection must contain its required table as an actual markdown table before the explanatory paragraph.",
 ]
+SELFTEST_ER_DSL = """实体甲(_实体甲编号_, 实体甲名称)\n实体乙(_实体乙编号_, 实体乙名称)\n\n实体甲 --- 1 --- < 关联 > --- N --- 实体乙\n"""
 
 
 class SelftestFailure(RuntimeError):
@@ -95,6 +96,28 @@ def _assert_contains(text: str, expected: str, label: str) -> dict[str, Any]:
         "ok": ok,
         "expected": expected,
     }
+
+
+def _figure_no_slug(text: str) -> str:
+    slug = re.sub(r"[^0-9A-Za-z]+", "-", str(text)).strip("-").lower()
+    return slug or "figure"
+
+
+def _default_er_output_name(figure_no: str) -> str:
+    return f"generated/fig{_figure_no_slug(figure_no)}-er-diagram.png"
+
+
+def _enabled_er_specs(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    raw = config.get("er_figure_specs") or {}
+    if not isinstance(raw, dict):
+        return {}
+    enabled: dict[str, dict[str, Any]] = {}
+    for raw_figure_no, raw_spec in raw.items():
+        figure_no = str(raw_figure_no).strip()
+        if not figure_no or not isinstance(raw_spec, dict) or raw_spec.get("enabled", True) is False:
+            continue
+        enabled[figure_no] = raw_spec
+    return enabled
 
 
 def _inspect_docx_xml(docx_path: Path) -> str:
@@ -187,6 +210,55 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
         check_result, _, _ = _run_command(check_cmd, "04-check-workspace", logs_dir)
         stage["commands"].append(check_result)
         _require(check_result["returncode"] == 0, "fixture check-workspace did not pass")
+
+        fixture_er_source = fixture_workspace / "docs" / "figure_specs" / "selftest-er.dbdia"
+        fixture_er_source.parent.mkdir(parents=True, exist_ok=True)
+        fixture_er_source.write_text(SELFTEST_ER_DSL, encoding="utf-8")
+        fixture_config = read_json(config_path)
+        fixture_config["er_figure_specs"] = {
+            "4.2": {
+                "caption": "图4.2 自测试通用E-R图",
+                "source_path": "docs/figure_specs/selftest-er.dbdia",
+                "enabled": True,
+            }
+        }
+        write_json(config_path, fixture_config)
+
+        prepare_figures_cmd = [sys.executable, str(cli_path), "prepare-figures", "--config", str(config_path)]
+        prepare_figures_result, _, _ = _run_command(prepare_figures_cmd, "05-prepare-figures", logs_dir)
+        stage["commands"].append(prepare_figures_result)
+        _require(prepare_figures_result["returncode"] == 0, "fixture prepare-figures failed for generic er selftest")
+
+        refreshed_fixture_config = read_json(config_path)
+        figure_cfg = (refreshed_fixture_config.get("figure_map") or {}).get("4.2", {})
+        assertion = {
+            "label": "fixture_generic_er_renderer",
+            "ok": str(figure_cfg.get("renderer") or "") == "dbdia-er",
+            "actual": str(figure_cfg.get("renderer") or ""),
+        }
+        stage["assertions"].append(assertion)
+        _require(assertion["ok"], "fixture generic er spec did not render with dbdia-er")
+
+        generated_er_path = fixture_workspace / str(figure_cfg.get("path") or "")
+        assertion = {
+            "label": "fixture_generic_er_output_exists",
+            "ok": generated_er_path.exists(),
+            "path": str(generated_er_path),
+        }
+        stage["assertions"].append(assertion)
+        _require(assertion["ok"], f"fixture generic er output missing: {generated_er_path}")
+
+        generated_src_dir = fixture_workspace / "docs" / "images" / "generated_src"
+        stem = Path(_default_er_output_name("4.2")).stem
+        for filename in (f"{stem}.dbdia", f"{stem}.dot", f"{stem}.svg"):
+            path = generated_src_dir / filename
+            assertion = {
+                "label": f"fixture_generic_er_sidecar:{filename}",
+                "ok": path.exists(),
+                "path": str(path),
+            }
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], f"fixture generic er sidecar missing: {path}")
 
         brief_dir = fixture_workspace / "docs" / "writing" / "chapter_briefs"
         packet_dir = fixture_workspace / "docs" / "writing" / "chapter_packets"
@@ -341,6 +413,30 @@ def _run_workspace_stage(config_path: Path, out_root: Path) -> dict[str, Any]:
             assertion = {"label": label, "ok": ok, "actual": actual}
             stage["assertions"].append(assertion)
             _require(assertion["ok"], f"workspace release summary failed assertion: {label}={actual}")
+
+        enabled_er_specs = _enabled_er_specs(ctx["config"])
+        generated_src_dir = ctx["workspace_root"] / "docs" / "images" / "generated_src"
+        for figure_no, er_spec in enabled_er_specs.items():
+            figure_cfg = (ctx["config"].get("figure_map") or {}).get(figure_no, {})
+            assertion = {
+                "label": f"workspace_er_renderer:{figure_no}",
+                "ok": str(figure_cfg.get("renderer") or "") == "dbdia-er",
+                "actual": str(figure_cfg.get("renderer") or ""),
+            }
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], f"workspace er figure {figure_no} renderer mismatch: expected dbdia-er")
+
+            output_name = str(er_spec.get("output_name") or "").strip() or _default_er_output_name(figure_no)
+            stem = Path(output_name).stem
+            for filename in (f"{stem}.dbdia", f"{stem}.dot", f"{stem}.svg"):
+                path = generated_src_dir / filename
+                assertion = {
+                    "label": f"workspace_er_sidecar:{figure_no}:{filename}",
+                    "ok": path.exists(),
+                    "path": str(path),
+                }
+                stage["assertions"].append(assertion)
+                _require(assertion["ok"], f"workspace er sidecar missing for figure {figure_no}: {path}")
 
         chapter5_path = ctx["workspace_root"] / ctx["config"].get("build", {}).get("input_dir", "polished_v3") / "05-系统实现.md"
         chapter5_text = chapter5_path.read_text(encoding="utf-8") if chapter5_path.exists() else ""

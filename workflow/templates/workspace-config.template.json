@@ -90,6 +90,7 @@
     "auto_generate_on_prepare_figures": false
   },
   "ai_figure_specs": {},
+  "er_figure_specs": {},
   "figure_map": {
     "4.1": {
       "caption": "图4.1 系统总体架构图",
