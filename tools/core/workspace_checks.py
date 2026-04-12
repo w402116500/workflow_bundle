@@ -273,14 +273,53 @@ def _figure_integration_blocking_entries(
 
             figure_cfg = raw_figure_map.get(figure_no)
             if not isinstance(figure_cfg, dict):
+                blocking_entries.append(
+                    {
+                        "chapter": str(chapter_name),
+                        "figure_no": figure_no,
+                        "title": title,
+                        "section": str(asset.get("section") or ""),
+                        "figure_path": "",
+                        "reference_kind": "",
+                        "mismatched_reference_path": "",
+                        "mismatched_reference_kind": "",
+                        "issue_type": "missing-mapped-figure-asset",
+                    }
+                )
                 continue
 
             raw_path = str(figure_cfg.get("path") or "").strip()
             if not raw_path:
+                blocking_entries.append(
+                    {
+                        "chapter": str(chapter_name),
+                        "figure_no": figure_no,
+                        "title": title,
+                        "section": str(asset.get("section") or ""),
+                        "figure_path": "",
+                        "reference_kind": "",
+                        "mismatched_reference_path": "",
+                        "mismatched_reference_kind": "",
+                        "issue_type": "missing-mapped-figure-asset",
+                    }
+                )
                 continue
 
             source_path = _resolve_workspace_member(workspace_root, raw_path, raw_path)
             if not source_path.exists():
+                blocking_entries.append(
+                    {
+                        "chapter": str(chapter_name),
+                        "figure_no": figure_no,
+                        "title": title,
+                        "section": str(asset.get("section") or ""),
+                        "figure_path": str(source_path),
+                        "reference_kind": "",
+                        "mismatched_reference_path": "",
+                        "mismatched_reference_kind": "",
+                        "issue_type": "mapped-figure-asset-missing-on-disk",
+                    }
+                )
                 continue
 
             has_reference, reference_kind, mismatched_reference_path, mismatched_reference_kind = _chapter_has_required_figure_reference(
@@ -306,6 +345,7 @@ def _figure_integration_blocking_entries(
                     "reference_kind": reference_kind,
                     "mismatched_reference_path": mismatched_reference_path,
                     "mismatched_reference_kind": mismatched_reference_kind,
+                    "issue_type": "missing-figure-reference" if not mismatched_reference_path else "mismatched-figure-reference",
                 }
             )
 
@@ -645,7 +685,16 @@ def run_workspace_check(config_path: Path) -> dict[str, Any]:
             section = f", section={entry['section']}" if entry.get("section") else ""
             mismatch_path = str(entry.get("mismatched_reference_path") or "").strip()
             mismatch_kind = str(entry.get("mismatched_reference_kind") or "").strip()
-            if mismatch_path:
+            issue_type = str(entry.get("issue_type") or "").strip()
+            if issue_type == "missing-mapped-figure-asset":
+                lines.append(
+                    f"  - {entry['chapter']}: 图{entry['figure_no']} ({entry['title']}) is required but no mapped figure asset is present{section}"
+                )
+            elif issue_type == "mapped-figure-asset-missing-on-disk":
+                lines.append(
+                    f"  - {entry['chapter']}: 图{entry['figure_no']} ({entry['title']}) maps to a missing file{section}; figure_path={entry['figure_path']}"
+                )
+            elif mismatch_path:
                 if mismatch_kind.endswith("-unresolved"):
                     lines.append(
                         f"  - {entry['chapter']}: 图{entry['figure_no']} ({entry['title']}) has markdown image reference {mismatch_path} but it does not resolve to the mapped asset{section}; figure_path={entry['figure_path']}"

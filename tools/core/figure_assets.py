@@ -12,11 +12,11 @@ from pathlib import Path
 from typing import Any
 
 import cairosvg
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from core.ai_image_generation import ai_override_blocking_entries, ai_override_map
 from core.page_screenshot_assets import stage_chapter5_test_screenshots
-from core.project_common import load_workspace_context, make_relative, material_output_paths, read_json, write_json
+from core.project_common import load_workspace_context, make_relative, material_output_paths, read_json, write_json, writing_output_paths
 
 
 THIS_ROOT = Path(__file__).resolve().parents[2]
@@ -42,6 +42,8 @@ HEADING_L2_RE = re.compile(r"^##\s+5\.(?P<num>\d+)\s+(?P<title>.+?)\s*$")
 HEADING_L3_RE = re.compile(r"^###\s+5\.\d+\.\d+\s+(?P<title>.+?)\s*$")
 FUNCTION_STRUCTURE_RENDERER_VERSION = "v2-monochrome-module-tree"
 DBDIA_ER_RENDERER_VERSION = "v1-generic-dbdia-chen-vendor-vizjs"
+USE_CASE_RENDERER_VERSION = "v3-clustered-uml-use-case"
+ARCHITECTURE_RENDERER_VERSION = "v1-layered-domain-fallback-architecture"
 SVG_RENDER_WIDTH_PX = 1665
 
 
@@ -122,6 +124,327 @@ def _root_system_label(project_title: str) -> str:
     return label or "系统功能结构"
 
 
+def _use_case_system_name(system_name: str) -> str:
+    match = re.match(r"^基于.+?的(.+系统)$", system_name)
+    if match:
+        return match.group(1).strip()
+    return system_name
+
+def _load_project_profile(config: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
+    profile_path = writing_output_paths(config, workspace_root)["project_profile_json"]
+    if not profile_path.exists():
+        return {}
+    return read_json(profile_path)
+
+def _use_case_node(node_id: str, label: str) -> dict[str, str]:
+    return {"id": node_id, "label": label}
+
+def _use_case_cluster(actor: str, *nodes: tuple[str, str]) -> dict[str, Any]:
+    return {
+        "actor": actor,
+        "use_cases": [_use_case_node(node_id, label) for node_id, label in nodes],
+    }
+
+def _traceability_use_case_payload(system_name: str) -> dict[str, Any]:
+    return {
+        "chart_title": "系统用例图",
+        "system_name": _use_case_system_name(system_name),
+        "left_clusters": [
+            _use_case_cluster(
+                "茶农",
+                ("farmer_login", "注册登录"),
+                ("garden_manage", "茶园管理"),
+                ("batch_create", "批次建档"),
+                ("farm_record", "农事记录提交"),
+                ("trace_bind", "溯源码绑定"),
+            ),
+            _use_case_cluster(
+                "加工厂",
+                ("processor_login", "注册登录"),
+                ("batch_receive", "批次接收"),
+                ("process_record", "加工记录提交"),
+            ),
+            _use_case_cluster(
+                "质检机构",
+                ("inspector_login", "注册登录"),
+                ("inspection_submit", "质检报告提交"),
+                ("warning_report", "异常上报"),
+            ),
+            _use_case_cluster(
+                "物流商",
+                ("logistics_login", "注册登录"),
+                ("storage_submit", "仓储物流提交"),
+            ),
+        ],
+        "right_clusters": [
+            _use_case_cluster(
+                "经销商",
+                ("dealer_login", "注册登录"),
+                ("sale_submit", "销售记录提交"),
+            ),
+            _use_case_cluster(
+                "消费者",
+                ("public_trace_query", "公开追溯查询"),
+            ),
+            _use_case_cluster(
+                "管理员",
+                ("org_audit", "机构审核"),
+                ("user_manage", "用户管理"),
+                ("full_supervision", "全流程监管"),
+                ("warning_handle", "预警处置"),
+            ),
+            _use_case_cluster(
+                "监管方",
+                ("supervision_query", "监管查询"),
+                ("abnormal_review", "异常复核"),
+            ),
+        ],
+        "floating_use_cases": [
+            {"id": "identity_bind", "label": "链上身份绑定", "anchor": "org_audit", "placement": "left", "distance": 420, "dy": 0},
+            {"id": "trace_result", "label": "结果展示/真伪校验", "anchor": "public_trace_query", "placement": "left", "distance": 420, "dy": 0},
+            {"id": "freeze_dispose", "label": "冻结/解冻处置", "anchor": "warning_handle", "placement": "left", "distance": 420, "dy": 0},
+        ],
+        "relations": [
+            {"type": "include", "from": "org_audit", "to": "identity_bind"},
+            {"type": "include", "from": "public_trace_query", "to": "trace_result"},
+            {"type": "extend", "from": "freeze_dispose", "to": "warning_handle"},
+        ],
+    }
+
+def _health_record_use_case_payload(system_name: str) -> dict[str, Any]:
+    return {
+        "chart_title": "系统用例图",
+        "system_name": _use_case_system_name(system_name),
+        "left_clusters": [
+            _use_case_cluster(
+                "患者",
+                ("patient_login", "注册登录"),
+                ("patient_profile", "修改个人信息"),
+                ("patient_view_record", "查看档案"),
+                ("auth_manage", "授权管理"),
+                ("patient_notice", "查看消息/公告"),
+                ("patient_feedback", "提交问题反馈"),
+            ),
+            _use_case_cluster(
+                "医生",
+                ("doctor_login", "注册登录"),
+                ("qualification_upload", "资质上传"),
+                ("patient_query", "查询患者"),
+                ("diagnosis_upload", "上传诊断记录"),
+                ("doctor_notice", "查看消息/公告"),
+                ("doctor_feedback", "提交问题反馈"),
+            ),
+        ],
+        "right_clusters": [
+            _use_case_cluster(
+                "管理员",
+                ("user_manage", "用户管理"),
+                ("doctor_review", "医生审核"),
+                ("publish_notice", "发布公告"),
+                ("audit_log", "查看审计日志"),
+                ("feedback_handle", "反馈处理"),
+            ),
+        ],
+        "floating_use_cases": [
+            {"id": "report_medication", "label": "检查报告/用药记录", "anchor": "patient_view_record", "placement": "right", "distance": 470, "dy": 0},
+            {"id": "revoke_auth", "label": "撤销授权", "anchor": "auth_manage", "placement": "right", "distance": 420, "dy": 0},
+            {"id": "apply_auth", "label": "申请授权", "anchor": "patient_query", "placement": "right", "distance": 420, "dy": 0},
+            {"id": "confirm_patient", "label": "确认患者信息", "anchor": "diagnosis_upload", "placement": "right", "distance": 420, "dy": 0},
+            {"id": "feedback_reply", "label": "回复/标记处理", "anchor": "feedback_handle", "placement": "below", "distance": 170, "dy": 0},
+        ],
+        "relations": [
+            {"type": "include", "from": "patient_view_record", "to": "report_medication"},
+            {"type": "extend", "from": "revoke_auth", "to": "auth_manage"},
+            {"type": "extend", "from": "patient_query", "to": "apply_auth"},
+            {"type": "include", "from": "diagnosis_upload", "to": "confirm_patient"},
+            {"type": "include", "from": "feedback_handle", "to": "feedback_reply"},
+        ],
+    }
+
+def _generic_use_case_payload(system_name: str, modules: list[dict[str, Any]], roles: list[str]) -> dict[str, Any]:
+    labels: list[str] = []
+    for module in modules[: max(2, min(6, len(roles)))]:
+        label = str(module.get("label", "")).strip()
+        if not label:
+            continue
+        label = re.sub(r"模块$", "", label).strip()
+        if label not in labels:
+            labels.append(label)
+    if not labels:
+        labels = ["注册登录", "业务处理", "结果查询"]
+
+    left_roles = roles[: math.ceil(len(roles) / 2)]
+    right_roles = roles[math.ceil(len(roles) / 2) :]
+    left_clusters = []
+    right_clusters = []
+    for role in left_roles:
+        left_clusters.append(
+            _use_case_cluster(role, *[(f"{_slug(role)}_{idx}", label) for idx, label in enumerate(labels[: min(3, len(labels))], start=1)])
+        )
+    for role in right_roles:
+        right_clusters.append(
+            _use_case_cluster(role, *[(f"{_slug(role)}_{idx}", label) for idx, label in enumerate(labels[: min(3, len(labels))], start=1)])
+        )
+
+    return {
+        "chart_title": "系统用例图",
+        "system_name": _use_case_system_name(system_name),
+        "left_clusters": left_clusters,
+        "right_clusters": right_clusters,
+        "floating_use_cases": [],
+        "relations": [],
+    }
+
+def _build_use_case_payload(config: dict[str, Any], manifest: dict[str, Any], workspace_root: Path) -> dict[str, Any] | None:
+    project_profile = _load_project_profile(config, workspace_root)
+    roles = [str(item).strip() for item in project_profile.get("roles", []) if str(item).strip()]
+    if not roles:
+        return None
+
+    core_modules = list(project_profile.get("core_modules", []) or [])
+    metadata = project_profile.get("metadata", {}) or {}
+    domain_key = _infer_domain_key(config, manifest, workspace_root, roles)
+
+    system_name = _root_system_label(config.get("metadata", {}).get("title") or manifest.get("title", "系统"))
+    if domain_key == "traceability":
+        return _traceability_use_case_payload(system_name)
+    if domain_key == "health_record":
+        return _health_record_use_case_payload(system_name)
+    return _generic_use_case_payload(system_name, core_modules, roles)
+
+def _infer_domain_key(
+    config: dict[str, Any],
+    manifest: dict[str, Any],
+    workspace_root: Path,
+    roles: list[str] | None = None,
+) -> str:
+    project_profile = _load_project_profile(config, workspace_root)
+    metadata = project_profile.get("metadata", {}) or {}
+    raw_domain = str(metadata.get("domain_key") or config.get("metadata", {}).get("domain_key") or "").strip().lower()
+    if raw_domain:
+        return raw_domain
+
+    title = f"{config.get('metadata', {}).get('title', '')} {manifest.get('title', '')}".lower()
+    role_text = " ".join(str(item).strip().lower() for item in (roles or project_profile.get("roles", []) or []))
+    text = f"{title} {role_text}"
+
+    health_tokens = ("health", "ehr", "medical", "doctor", "patient", "健康", "病历", "医疗", "患者", "医生")
+    trace_tokens = ("traceability", "trace", "batch", "tea", "logistics", "溯源", "批次", "茶叶", "物流", "经销")
+    if any(token in text for token in health_tokens):
+        return "health_record"
+    if any(token in text for token in trace_tokens):
+        return "traceability"
+    return "generic_blockchain"
+
+def _health_record_architecture_payload(system_name: str, chain_platform: str) -> dict[str, Any]:
+    chain_label = "FISCO BCOS 联盟链" if chain_platform == "fisco" else "联盟链可信存证层"
+    return {
+        "system_name": system_name,
+        "top_label": "统一业务入口",
+        "top_note": "患者、医生与管理员通过前端页面进入同一业务体系",
+        "presentation": {
+            "title": "表现层",
+            "items": ["患者端页面", "医生端页面", "管理员后台"],
+        },
+        "business": {
+            "title": "业务层",
+            "items": ["身份鉴权与会话管理", "健康档案管理服务", "授权与撤销服务", "合约调用与审计回写"],
+        },
+        "data": {
+            "title": "数据层",
+            "items": ["账户与资料数据", "健康档案密文", "授权 / 日志 / 交易记录"],
+        },
+        "chain": {
+            "title": "可信存证层",
+            "items": [chain_label, "EhrAccessRegistry 合约", "档案摘要 / 授权状态 / 时间戳"],
+        },
+        "links": [
+            {"label": "页面访问与结果回显", "from": "top", "to": "presentation"},
+            {"label": "业务请求 / 权限判断", "from": "presentation", "to": "business"},
+            {"label": "链下数据持久化", "from": "business", "to": "data"},
+            {"label": "链上存证 / 状态校验", "from": "business", "to": "chain"},
+        ],
+    }
+
+def _traceability_architecture_payload(system_name: str, chain_platform: str) -> dict[str, Any]:
+    chain_label = "联盟链网络" if chain_platform == "fabric" else "联盟链平台"
+    return {
+        "system_name": system_name,
+        "top_label": "多角色协同入口",
+        "top_note": "业务工作台、公开查询端与监管分析端共享同一后端服务",
+        "presentation": {
+            "title": "表现层",
+            "items": ["业务工作台", "公开追溯页面", "监管分析页面"],
+        },
+        "business": {
+            "title": "业务层",
+            "items": ["身份鉴权与流程编排", "批次 / 流转记录服务", "追溯查询与预警服务", "链码 / 合约调用适配"],
+        },
+        "data": {
+            "title": "数据层",
+            "items": ["机构与用户数据", "批次与阶段记录", "日志与交易映射"],
+        },
+        "chain": {
+            "title": "可信存证层",
+            "items": [chain_label, "链码 / 合约能力", "批次状态 / 追溯凭证"],
+        },
+        "links": [
+            {"label": "业务操作与结果展示", "from": "top", "to": "presentation"},
+            {"label": "请求编排 / 状态控制", "from": "presentation", "to": "business"},
+            {"label": "链下数据持久化", "from": "business", "to": "data"},
+            {"label": "链上登记 / 状态校验", "from": "business", "to": "chain"},
+        ],
+    }
+
+def _generic_architecture_payload(
+    system_name: str,
+    manifest: dict[str, Any],
+    chain_platform: str,
+) -> dict[str, Any]:
+    stack = manifest.get("detected_stack", {}) or {}
+    frontend = str(stack.get("frontend_framework") or "前端页面").strip()
+    backend = str(stack.get("backend_framework") or "后端服务").strip()
+    database = str(stack.get("database_kind") or "关系数据库").strip()
+    chain_sdk = str(stack.get("chain_sdk") or "链交互组件").strip()
+    chain_label = "区块链平台" if chain_platform == "auto" else chain_platform.upper()
+    return {
+        "system_name": system_name,
+        "top_label": "统一业务入口",
+        "top_note": "前端请求经后端编排后分别落入数据库与链上可信状态",
+        "presentation": {
+            "title": "表现层",
+            "items": [frontend, "业务页面交互", "结果展示与反馈"],
+        },
+        "business": {
+            "title": "业务层",
+            "items": [backend, "权限判断与业务编排", "链交互适配", "日志与状态回写"],
+        },
+        "data": {
+            "title": "数据层",
+            "items": [database, "主业务数据", "审计与交易日志"],
+        },
+        "chain": {
+            "title": "可信存证层",
+            "items": [chain_label, chain_sdk, "关键状态 / 摘要存证"],
+        },
+        "links": [
+            {"label": "访问请求", "from": "top", "to": "presentation"},
+            {"label": "接口调用", "from": "presentation", "to": "business"},
+            {"label": "链下存储", "from": "business", "to": "data"},
+            {"label": "链上校验", "from": "business", "to": "chain"},
+        ],
+    }
+
+def _build_architecture_payload(config: dict[str, Any], manifest: dict[str, Any], workspace_root: Path) -> dict[str, Any]:
+    domain_key = _infer_domain_key(config, manifest, workspace_root)
+    system_name = _root_system_label(config.get("metadata", {}).get("title") or manifest.get("title", "系统"))
+    chain_platform = str(config.get("metadata", {}).get("chain_platform") or manifest.get("chain_platform") or "auto").strip().lower()
+    if domain_key == "health_record":
+        return _health_record_architecture_payload(system_name, chain_platform)
+    if domain_key == "traceability":
+        return _traceability_architecture_payload(system_name, chain_platform)
+    return _generic_architecture_payload(system_name, manifest, chain_platform)
+
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     candidates = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
@@ -154,6 +477,414 @@ def _center_text(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], text
     ty = y1 + (y2 - y1 - th) / 2
     draw.multiline_text((tx, ty), text, font=font, fill=fill, spacing=6, align="center")
 
+
+def _draw_titled_panel(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    title: str,
+    items: list[str],
+    *,
+    title_font: ImageFont.ImageFont,
+    item_font: ImageFont.ImageFont,
+    outline: tuple[int, int, int] = (0, 0, 0),
+) -> None:
+    x1, y1, x2, y2 = box
+    draw.rounded_rectangle(box, radius=14, outline=outline, fill=(255, 255, 255), width=2)
+    title_height = 42
+    draw.line((x1, y1 + title_height, x2, y1 + title_height), fill=outline, width=2)
+    _center_text(draw, (x1 + 8, y1 + 4, x2 - 8, y1 + title_height - 4), title, title_font, outline)
+
+    body_top = y1 + title_height + 18
+    body_bottom = y2 - 18
+    if not items:
+        return
+
+    count = len(items)
+    gap = 22
+    left_padding = 22
+    usable_width = (x2 - x1) - left_padding * 2 - gap * max(count - 1, 0)
+    item_width = max(120, int(usable_width / max(count, 1)))
+    item_height = min(74, max(58, body_bottom - body_top))
+    item_top = body_top + max(0, (body_bottom - body_top - item_height) // 2)
+    wrap_width = 9 if item_width <= 180 else 11 if item_width <= 230 else 13
+
+    for idx, item in enumerate(items):
+        bx1 = x1 + left_padding + idx * (item_width + gap)
+        bx2 = min(bx1 + item_width, x2 - left_padding)
+        item_box = (bx1, item_top, bx2, item_top + item_height)
+        draw.rounded_rectangle(item_box, radius=9, outline=outline, fill=(255, 255, 255), width=2)
+        _center_text(draw, item_box, _wrap_text(item, wrap_width), item_font, outline)
+
+def _panel_center_top(box: tuple[int, int, int, int]) -> tuple[int, int]:
+    return ((box[0] + box[2]) // 2, box[1])
+
+def _panel_center_bottom(box: tuple[int, int, int, int]) -> tuple[int, int]:
+    return ((box[0] + box[2]) // 2, box[3])
+
+def _draw_centered_label(draw: ImageDraw.ImageDraw, center: tuple[int, int], text: str, font: ImageFont.ImageFont) -> None:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    w = bbox[2] - bbox[0]
+    h = bbox[3] - bbox[1]
+    x = int(center[0] - w / 2)
+    y = int(center[1] - h / 2)
+    draw.rectangle((x - 4, y - 2, x + w + 4, y + h + 2), fill=(255, 255, 255))
+    draw.text((x, y), text, font=font, fill=(0, 0, 0))
+
+def _crop_white_margin(image: Image.Image, *, padding: int = 48) -> Image.Image:
+    background = Image.new(image.mode, image.size, (255, 255, 255))
+    diff = ImageChops.difference(image, background)
+    bbox = diff.getbbox()
+    if not bbox:
+        return image
+    x1, y1, x2, y2 = bbox
+    return image.crop(
+        (
+            max(0, x1 - padding),
+            max(0, y1 - padding),
+            min(image.size[0], x2 + padding),
+            min(image.size[1], y2 + padding),
+        )
+    )
+
+def _box_from_center(center: tuple[int, int], size: tuple[int, int]) -> tuple[int, int, int, int]:
+    cx, cy = center
+    width, height = size
+    return (cx - width // 2, cy - height // 2, cx + width // 2, cy + height // 2)
+
+def _ellipse_anchor_towards(box: tuple[int, int, int, int], target: tuple[int, int]) -> tuple[int, int]:
+    x1, y1, x2, y2 = box
+    cx = (x1 + x2) / 2
+    cy = (y1 + y2) / 2
+    dx = target[0] - cx
+    dy = target[1] - cy
+    rx = max((x2 - x1) / 2, 1.0)
+    ry = max((y2 - y1) / 2, 1.0)
+    if dx == 0 and dy == 0:
+        return (int(cx), int(cy))
+    scale = 1.0 / math.sqrt((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry))
+    return (int(cx + dx * scale), int(cy + dy * scale))
+
+def _draw_attribute_ellipse(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    text: str,
+    font: ImageFont.ImageFont,
+    *,
+    fill: tuple[int, int, int] = (255, 255, 255),
+    outline: tuple[int, int, int] = (0, 0, 0),
+    underline: bool = False,
+) -> None:
+    draw.ellipse(box, fill=fill, outline=outline, width=3)
+    x1, y1, x2, y2 = box
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw = bbox[2] - bbox[0]
+    th = bbox[3] - bbox[1]
+    tx = x1 + (x2 - x1 - tw) / 2
+    ty = y1 + (y2 - y1 - th) / 2
+    draw.text((tx, ty), text, font=font, fill=outline)
+    if underline:
+        underline_y = ty + th + 2
+        draw.line((tx, underline_y, tx + tw, underline_y), fill=outline, width=2)
+
+def _evenly_spaced_values(start: int, end: int, count: int) -> list[int]:
+    if count <= 0:
+        return []
+    if count == 1:
+        return [int((start + end) / 2)]
+    gap = (end - start) / (count - 1)
+    return [int(start + gap * index) for index in range(count)]
+
+def _draw_actor(draw: ImageDraw.ImageDraw, center: tuple[int, int], name: str, font: ImageFont.ImageFont) -> None:
+    cx, cy = center
+    head_r = 24
+    head_box = (cx - head_r, cy - 78, cx + head_r, cy - 30)
+    draw.ellipse(head_box, fill=(255, 255, 255), outline=(0, 0, 0), width=3)
+    draw.line((cx, cy - 30, cx, cy + 38), fill=(0, 0, 0), width=3)
+    draw.line((cx - 34, cy - 2, cx + 34, cy - 2), fill=(0, 0, 0), width=3)
+    draw.line((cx, cy + 38, cx - 30, cy + 92), fill=(0, 0, 0), width=3)
+    draw.line((cx, cy + 38, cx + 30, cy + 92), fill=(0, 0, 0), width=3)
+    label_box = draw.textbbox((0, 0), name, font=font)
+    label_width = label_box[2] - label_box[0]
+    draw.text((cx - label_width / 2, cy + 106), name, font=font, fill=(0, 0, 0))
+
+def _actor_anchor(center: tuple[int, int], side: str) -> tuple[int, int]:
+    cx, cy = center
+    if side == "right":
+        return (cx - 28, cy - 2)
+    return (cx + 28, cy - 2)
+
+def _draw_dashed_arrow(
+    draw: ImageDraw.ImageDraw,
+    start: tuple[int, int],
+    end: tuple[int, int],
+    *,
+    color: tuple[int, int, int] = (0, 0, 0),
+    width: int = 3,
+    dash: int = 20,
+    gap: int = 12,
+    head: int = 14,
+) -> None:
+    x1, y1 = start
+    x2, y2 = end
+    total = math.hypot(x2 - x1, y2 - y1)
+    if total < 1:
+        return
+    dx = (x2 - x1) / total
+    dy = (y2 - y1) / total
+    drawn = 0.0
+    while drawn < total:
+        segment = min(dash, total - drawn)
+        sx = x1 + dx * drawn
+        sy = y1 + dy * drawn
+        ex = x1 + dx * (drawn + segment)
+        ey = y1 + dy * (drawn + segment)
+        draw.line((sx, sy, ex, ey), fill=color, width=width)
+        drawn += dash + gap
+    angle = math.atan2(y2 - y1, x2 - x1)
+    a1 = angle + math.pi * 0.85
+    a2 = angle - math.pi * 0.85
+    p3 = (x2 + head * math.cos(a1), y2 + head * math.sin(a1))
+    p4 = (x2 + head * math.cos(a2), y2 + head * math.sin(a2))
+    draw.polygon([end, p3, p4], fill=color)
+
+def _use_case_node_centers(cluster_center_y: int, count: int, *, box_height: int, gap: int) -> list[int]:
+    if count <= 0:
+        return []
+    total = count * box_height + (count - 1) * gap
+    start = cluster_center_y - total / 2 + box_height / 2
+    return [int(start + idx * (box_height + gap)) for idx in range(count)]
+
+def _floating_center(anchor: tuple[int, int], placement: str, distance: int, dy: int) -> tuple[int, int]:
+    x, y = anchor
+    if placement == "left":
+        return (x - distance, y + dy)
+    if placement == "right":
+        return (x + distance, y + dy)
+    if placement == "above":
+        return (x, y - distance + dy)
+    return (x, y + distance + dy)
+
+def _use_case_relation_label_center(start: tuple[int, int], end: tuple[int, int]) -> tuple[int, int]:
+    mid_x = int((start[0] + end[0]) / 2)
+    mid_y = int((start[1] + end[1]) / 2)
+    dx = abs(end[0] - start[0])
+    dy = abs(end[1] - start[1])
+    if dx >= dy:
+        return (mid_x, mid_y - 28)
+    return (mid_x + 24, mid_y)
+
+def _render_use_case_diagram_png(spec_payload: dict[str, Any], output_path: Path) -> None:
+    canvas_width = 3200
+    canvas_height = 2200
+    image = Image.new("RGB", (canvas_width, canvas_height), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+
+    boundary_box = (560, 180, 2640, 2060)
+    left_use_case_x = 1120
+    right_use_case_x = 2080
+    actor_left_x = 150
+    actor_right_x = 3050
+    use_case_size = (420, 96)
+    title_font = _load_font(56)
+    actor_font = _load_font(28)
+    use_case_font = _load_font(28)
+    system_font = _load_font(40)
+    relation_font = _load_font(26)
+
+    left_clusters = list(spec_payload.get("left_clusters", []) or [])
+    right_clusters = list(spec_payload.get("right_clusters", []) or [])
+    floating_use_cases = list(spec_payload.get("floating_use_cases", []) or [])
+    relations = list(spec_payload.get("relations", []) or [])
+    chart_title = str(spec_payload.get("chart_title", "系统用例图")).strip() or "系统用例图"
+    system_name = str(spec_payload.get("system_name", "系统")).strip() or "系统"
+
+    if not left_clusters and not right_clusters:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        image.save(output_path)
+        return
+
+    node_boxes: dict[str, tuple[int, int, int, int]] = {}
+    actor_entries: list[tuple[str, tuple[int, int], str, list[str]]] = []
+
+    left_centers = _evenly_spaced_values(boundary_box[1] + 320, boundary_box[3] - 220, len(left_clusters))
+    right_centers = _evenly_spaced_values(boundary_box[1] + 320, boundary_box[3] - 220, len(right_clusters))
+
+    for cluster, center_y in zip(left_clusters, left_centers):
+        actor_name = str(cluster.get("actor", "")).strip()
+        use_cases = list(cluster.get("use_cases", []) or [])
+        y_positions = _use_case_node_centers(center_y, len(use_cases), box_height=use_case_size[1], gap=28)
+        node_ids: list[str] = []
+        for node, node_y in zip(use_cases, y_positions):
+            node_id = str(node.get("id", "")).strip()
+            if not node_id:
+                continue
+            node_ids.append(node_id)
+            node_boxes[node_id] = _box_from_center((left_use_case_x, node_y), use_case_size)
+        actor_entries.append((actor_name, (actor_left_x, center_y), "left", node_ids))
+
+    for cluster, center_y in zip(right_clusters, right_centers):
+        actor_name = str(cluster.get("actor", "")).strip()
+        use_cases = list(cluster.get("use_cases", []) or [])
+        y_positions = _use_case_node_centers(center_y, len(use_cases), box_height=use_case_size[1], gap=28)
+        node_ids: list[str] = []
+        for node, node_y in zip(use_cases, y_positions):
+            node_id = str(node.get("id", "")).strip()
+            if not node_id:
+                continue
+            node_ids.append(node_id)
+            node_boxes[node_id] = _box_from_center((right_use_case_x, node_y), use_case_size)
+        actor_entries.append((actor_name, (actor_right_x, center_y), "right", node_ids))
+
+    for node in floating_use_cases:
+        node_id = str(node.get("id", "")).strip()
+        anchor_id = str(node.get("anchor", "")).strip()
+        if not node_id or anchor_id not in node_boxes:
+            continue
+        anchor_box = node_boxes[anchor_id]
+        anchor_center = ((anchor_box[0] + anchor_box[2]) // 2, (anchor_box[1] + anchor_box[3]) // 2)
+        placement = str(node.get("placement", "right"))
+        distance = int(node.get("distance", 420))
+        dy = int(node.get("dy", 0))
+        center = _floating_center(anchor_center, placement, distance, dy)
+        node_boxes[node_id] = _box_from_center(center, use_case_size)
+
+    _center_text(draw, (0, 20, canvas_width, 100), chart_title, title_font, (0, 0, 0))
+    draw.rounded_rectangle(boundary_box, radius=36, outline=(0, 0, 0), width=4, fill=(255, 255, 255))
+    _center_text(draw, (boundary_box[0] + 260, boundary_box[1] + 10, boundary_box[2] - 260, boundary_box[1] + 78), system_name, system_font, (0, 0, 0))
+
+    label_lookup: dict[str, str] = {}
+    for cluster in left_clusters + right_clusters:
+        for node in cluster.get("use_cases", []) or []:
+            node_id = str(node.get("id", "")).strip()
+            if node_id:
+                label_lookup[node_id] = str(node.get("label", "")).strip()
+    for node in floating_use_cases:
+        node_id = str(node.get("id", "")).strip()
+        if node_id:
+            label_lookup[node_id] = str(node.get("label", "")).strip()
+
+    for node_id, box in node_boxes.items():
+        _draw_attribute_ellipse(draw, box, _wrap_text(label_lookup.get(node_id, ""), 10), use_case_font)
+
+    for actor_name, center, side, node_ids in actor_entries:
+        _draw_actor(draw, center, actor_name, actor_font)
+        actor_anchor = _actor_anchor(center, side)
+        for node_id in node_ids:
+            node_box = node_boxes.get(node_id)
+            if not node_box:
+                continue
+            node_anchor = _ellipse_anchor_towards(node_box, actor_anchor)
+            draw.line((actor_anchor, node_anchor), fill=(0, 0, 0), width=3)
+
+    for relation in relations:
+        source_id = str(relation.get("from", "")).strip()
+        target_id = str(relation.get("to", "")).strip()
+        if source_id not in node_boxes or target_id not in node_boxes:
+            continue
+        source_box = node_boxes[source_id]
+        target_box = node_boxes[target_id]
+        source_center = ((source_box[0] + source_box[2]) // 2, (source_box[1] + source_box[3]) // 2)
+        target_center = ((target_box[0] + target_box[2]) // 2, (target_box[1] + target_box[3]) // 2)
+        start = _ellipse_anchor_towards(source_box, target_center)
+        end = _ellipse_anchor_towards(target_box, source_center)
+        _draw_dashed_arrow(draw, start, end)
+        label_center = _use_case_relation_label_center(start, end)
+        _draw_centered_label(draw, label_center, f"<<{relation.get('type', '')}>>", relation_font)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _crop_white_margin(image, padding=32).save(output_path)
+
+def _render_architecture_png(payload: dict[str, Any], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    width = 1700
+    height = 930
+    image = Image.new("RGB", (width, height), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+
+    title_font = _load_font(30)
+    label_font = _load_font(20)
+    panel_title_font = _load_font(24)
+    item_font = _load_font(20)
+    note_font = _load_font(18)
+    color = (0, 0, 0)
+
+    root_box = (460, 34, 1240, 104)
+    draw.rounded_rectangle(root_box, radius=12, outline=color, fill=(255, 255, 255), width=2)
+    _center_text(draw, root_box, _wrap_text(str(payload.get("system_name") or "系统总体架构"), 18), title_font, color)
+
+    top_label_box = (490, 128, 1210, 176)
+    draw.rounded_rectangle(top_label_box, radius=10, outline=color, fill=(255, 255, 255), width=2)
+    _center_text(draw, top_label_box, str(payload.get("top_label") or "统一业务入口"), label_font, color)
+
+    top_note = str(payload.get("top_note") or "").strip()
+    if top_note:
+        note_box = (330, 182, 1370, 218)
+        _center_text(draw, note_box, _wrap_text(top_note, 34), note_font, color)
+
+    presentation_box = (150, 250, 1550, 410)
+    business_box = (150, 452, 1550, 632)
+    data_box = (150, 694, 780, 878)
+    chain_box = (920, 694, 1550, 878)
+
+    _draw_titled_panel(
+        draw,
+        presentation_box,
+        str((payload.get("presentation") or {}).get("title") or "表现层"),
+        list((payload.get("presentation") or {}).get("items") or []),
+        title_font=panel_title_font,
+        item_font=item_font,
+    )
+    _draw_titled_panel(
+        draw,
+        business_box,
+        str((payload.get("business") or {}).get("title") or "业务层"),
+        list((payload.get("business") or {}).get("items") or []),
+        title_font=panel_title_font,
+        item_font=item_font,
+    )
+    _draw_titled_panel(
+        draw,
+        data_box,
+        str((payload.get("data") or {}).get("title") or "数据层"),
+        list((payload.get("data") or {}).get("items") or []),
+        title_font=panel_title_font,
+        item_font=item_font,
+    )
+    _draw_titled_panel(
+        draw,
+        chain_box,
+        str((payload.get("chain") or {}).get("title") or "可信存证层"),
+        list((payload.get("chain") or {}).get("items") or []),
+        title_font=panel_title_font,
+        item_font=item_font,
+    )
+
+    _arrow(draw, _panel_center_bottom(root_box), _panel_center_top(top_label_box), color=color, width=2, head=8)
+    _arrow(draw, _panel_center_bottom(top_label_box), _panel_center_top(presentation_box), color=color, width=2, head=8)
+    _arrow(draw, _panel_center_bottom(presentation_box), _panel_center_top(business_box), color=color, width=2, head=8)
+
+    business_bottom = _panel_center_bottom(business_box)
+    branch_y = business_bottom[1] + 18
+    data_top = _panel_center_top(data_box)
+    chain_top = _panel_center_top(chain_box)
+    draw.line((business_bottom[0], business_bottom[1], business_bottom[0], branch_y), fill=color, width=2)
+    draw.line((data_top[0], branch_y, chain_top[0], branch_y), fill=color, width=2)
+    _arrow(draw, (data_top[0], branch_y), data_top, color=color, width=2, head=8)
+    _arrow(draw, (chain_top[0], branch_y), chain_top, color=color, width=2, head=8)
+
+    link_map = {str(item.get("to") or "").strip(): str(item.get("label") or "").strip() for item in list(payload.get("links") or [])}
+    for label, box, y in [
+        (link_map.get("presentation", ""), presentation_box, 226),
+        (link_map.get("business", ""), business_box, 426),
+        (link_map.get("data", ""), data_box, 666),
+        (link_map.get("chain", ""), chain_box, 666),
+    ]:
+        if not label:
+            continue
+        cx = (box[0] + box[2]) // 2
+        _draw_centered_label(draw, (cx, y), label, note_font)
+
+    image.save(output_path)
 
 def _rounded_rect(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], radius: int = 18) -> None:
     draw.rounded_rectangle(box, radius=radius, outline=(203, 213, 225), fill=(248, 250, 252), width=2)
@@ -698,9 +1429,22 @@ def _build_specs(config: dict[str, Any], manifest: dict[str, Any], workspace_roo
     er = _pick_block(database_blocks, "erdiagram") or _pick_block(overview_blocks, "erdiagram")
 
     chapter5_path = workspace_root / config.get("build", {}).get("input_dir", "polished_v3") / "05-系统实现.md"
-    project_title = config.get("metadata", {}).get("title") or manifest.get("title", "系统功能结构图")
+    project_profile_path = writing_output_paths(config, workspace_root)["project_profile_json"]
+    use_case_payload = _build_use_case_payload(config, manifest, workspace_root)
+    architecture_payload = _build_architecture_payload(config, manifest, workspace_root)
 
     specs: list[FigureSpec] = []
+    if use_case_payload:
+        specs.append(
+            FigureSpec(
+                "3.1",
+                "图3.1 系统用例图",
+                "generated/fig3-1-use-case-diagram.png",
+                json.dumps(use_case_payload, ensure_ascii=False, sort_keys=True),
+                renderer="use_case",
+                source_paths=(project_profile_path,) if project_profile_path.exists() else (),
+            )
+        )
     if architecture:
         specs.append(
             FigureSpec(
@@ -709,6 +1453,17 @@ def _build_specs(config: dict[str, Any], manifest: dict[str, Any], workspace_roo
                 "generated/fig4-1-architecture.png",
                 architecture.code,
                 source_paths=(architecture.source_path,),
+            )
+        )
+    else:
+        specs.append(
+            FigureSpec(
+                "4.1",
+                "图4.1 系统总体架构图",
+                "generated/fig4-1-architecture.png",
+                json.dumps(architecture_payload, ensure_ascii=False, sort_keys=True),
+                renderer="pillow-architecture",
+                source_paths=(project_profile_path,) if project_profile_path.exists() else (),
             )
         )
     if er:
@@ -766,6 +1521,12 @@ def _figure_spec_hash(spec: FigureSpec, config: dict[str, Any], manifest: dict[s
         payload["project_title"] = config.get("metadata", {}).get("title") or manifest.get("title", "系统图")
         payload["font_name"] = _preferred_dbdia_font_name()
         payload["code"] = spec.code
+    elif spec.renderer == "use_case":
+        payload["renderer_version"] = USE_CASE_RENDERER_VERSION
+        payload["use_case_payload"] = json.loads(spec.code) if spec.code else {}
+    elif spec.renderer == "pillow-architecture":
+        payload["renderer_version"] = ARCHITECTURE_RENDERER_VERSION
+        payload["architecture_payload"] = json.loads(spec.code) if spec.code else {}
     else:
         payload["code"] = spec.code
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
@@ -774,6 +1535,8 @@ def _figure_spec_hash(spec: FigureSpec, config: dict[str, Any], manifest: dict[s
 
 def _can_adopt_existing_output(spec: FigureSpec, output_path: Path) -> bool:
     if not output_path.exists():
+        return False
+    if spec.renderer in {"pillow", "use_case", "pillow-architecture"}:
         return False
     if not spec.source_paths:
         return True
@@ -851,6 +1614,10 @@ def run_prepare_figures(config_path: Path) -> dict[str, Any]:
                 _render_function_structure_png(project_title, chapter5_path, output_path)
             elif spec.renderer == "dbdia-er":
                 _render_dbdia_er_diagram_png(spec, output_path, workspace_root)
+            elif spec.renderer == "use_case":
+                _render_use_case_diagram_png(json.loads(spec.code), output_path)
+            elif spec.renderer == "pillow-architecture":
+                _render_architecture_png(json.loads(spec.code), output_path)
             else:
                 _render_mermaid_png(spec.code, output_path)
         figure_map[spec.figure_no] = {

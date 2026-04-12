@@ -4771,3 +4771,19 @@
   - added health-record extraction support for `assets/frontend_manual_test_*`, FISCO-oriented Chapter 4 wording, and Chapter 6 health-record test tables
   - extended release summaries and selftests so stale / cross-section page screenshots are blocked and regression-tested
 
+
+
+## 2026-04-12 14:32:31 +08:00
+
+### Step 211
+- Action: Patched `workflow_bundle/tools/core/figure_assets.py`, `workflow_bundle/tools/core/workspace_checks.py`, and `workflow_bundle/tools/core/selftest.py` to repair the remaining Chapter 3 / Chapter 4 figure workflow gaps around `图3.1` and `图4.1`, while preserving the previously released `dbdia-er` E-R rendering path.
+- Purpose: The active health-record thesis workspace had already passed the Chapter 5 screenshot contract, but two earlier-chapter figure links still leaked through the workflow:
+  - `图3.1 系统用例图` still depended too heavily on fresh workspace metadata; when the profile or domain tag lagged behind, the workflow could not reliably infer the health-record use-case layout required by Chapter 3.
+  - `图4.1 系统总体架构图` was only generated when an upstream mermaid architecture block existed. For projects that lacked that source block, `prepare-figures` silently skipped `4.1`, and preflight only noticed the issue after the正文 side was manually inspected.
+  - `check-workspace` also failed to block the case where a required figure had no `figure_map` asset entry at all, which meant missing mapped assets could slip through figure integration checks.
+- Result:
+  - added a deterministic `use_case` renderer path for `图3.1`, with domain inference fallback from title / roles so health-record projects still get a usable Chapter 3 use-case figure even when workspace metadata is stale
+  - added a deterministic `pillow-architecture` fallback renderer for `图4.1`, so Chapter 4 can still receive a valid overall architecture figure when no source mermaid architecture block is present
+  - preserved the existing `dbdia-er` explicit E-R workflow and merged the new 3.1 / 4.1 logic without regressing remote `4.2` support
+  - strengthened `workspace_checks.py` so required figures now block on both missing mapped assets and mapped asset paths that do not exist on disk
+  - extended `selftest.py` with a regression that deletes a required mapped figure asset, asserts `check-workspace` fails with the new blocking reason, then restores the config and confirms recovery

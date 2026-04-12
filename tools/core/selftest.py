@@ -313,6 +313,58 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
             stage["assertions"].append(assertion)
             _require(assertion["ok"], "fixture figure integration blocking regression did not clear after marker insertion")
 
+        missing_asset_cfg = read_json(config_path)
+        missing_asset_figure_cfg = dict((missing_asset_cfg.get("figure_map") or {}).get("4.2") or {})
+        missing_asset_figure_map = dict(missing_asset_cfg.get("figure_map") or {})
+        missing_asset_figure_map.pop("4.2", None)
+        missing_asset_cfg["figure_map"] = missing_asset_figure_map
+        write_json(config_path, missing_asset_cfg)
+
+        missing_asset_check_cmd = [sys.executable, str(cli_path), "check-workspace", "--config", str(config_path)]
+        missing_asset_check_result, missing_asset_check_stdout, _ = _run_command(
+            missing_asset_check_cmd,
+            "07a-check-workspace-figure-mapped-asset-missing-negative",
+            logs_dir,
+        )
+        stage["commands"].append(missing_asset_check_result)
+        for label, ok, actual in (
+            ("fixture_figure_asset_missing_negative_status", missing_asset_check_result["returncode"] != 0, missing_asset_check_result["returncode"]),
+            ("fixture_figure_asset_missing_negative_figure_no", "图4.2" in missing_asset_check_stdout, "图4.2" in missing_asset_check_stdout),
+            (
+                "fixture_figure_asset_missing_negative_reason",
+                "no mapped figure asset is present" in missing_asset_check_stdout,
+                "no mapped figure asset is present" in missing_asset_check_stdout,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture missing mapped figure asset regression did not trigger as expected")
+
+        restored_missing_asset_cfg = read_json(config_path)
+        restored_missing_asset_figure_map = dict(restored_missing_asset_cfg.get("figure_map") or {})
+        restored_missing_asset_figure_map["4.2"] = missing_asset_figure_cfg
+        restored_missing_asset_cfg["figure_map"] = restored_missing_asset_figure_map
+        write_json(config_path, restored_missing_asset_cfg)
+
+        restored_missing_asset_check_cmd = [sys.executable, str(cli_path), "check-workspace", "--config", str(config_path)]
+        restored_missing_asset_check_result, restored_missing_asset_check_stdout, _ = _run_command(
+            restored_missing_asset_check_cmd,
+            "07b-check-workspace-figure-mapped-asset-missing-restored",
+            logs_dir,
+        )
+        stage["commands"].append(restored_missing_asset_check_result)
+        for label, ok, actual in (
+            ("fixture_figure_asset_missing_restored_status", restored_missing_asset_check_result["returncode"] == 0, restored_missing_asset_check_result["returncode"]),
+            (
+                "fixture_figure_asset_missing_restored_none",
+                "Blocking figure integration issues:\n  - none" in restored_missing_asset_check_stdout,
+                "Blocking figure integration issues:\n  - none" in restored_missing_asset_check_stdout,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture missing mapped figure asset regression did not clear after restore")
+
         refreshed_after_positive = read_json(config_path)
         figure5_cfg = (refreshed_after_positive.get("figure_map") or {}).get("5.1", {})
         mapped_figure5_path = fixture_workspace / str(figure5_cfg.get("path") or "")
