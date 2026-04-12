@@ -43,6 +43,27 @@ ROLE_PATTERNS = [
     "admin",
 ]
 
+ROLE_ALIAS_GROUPS = [
+    ("患者", ["患者", "patient"]),
+    ("医生", ["医生", "doctor"]),
+    ("管理员", ["管理员", "admin"]),
+    ("用户", ["用户", "user"]),
+    ("医院", ["医院", "hospital"]),
+    ("茶农", ["茶农", "tea_farmer", "farmer"]),
+    ("加工厂", ["加工厂", "processor"]),
+    ("质检机构", ["质检机构", "inspector"]),
+    ("物流商", ["物流商", "logistics"]),
+    ("经销商", ["经销商", "dealer"]),
+    ("消费者", ["消费者", "consumer"]),
+    ("监管方", ["监管", "regulator"]),
+    ("生产方", ["生产方", "manufacturer"]),
+]
+
+ROLE_DOMAIN_ORDERS = {
+    "health_record": ["患者", "医生", "管理员"],
+    "traceability": ["管理员", "茶农", "加工厂", "质检机构", "物流商", "经销商", "消费者", "监管方"],
+}
+
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg"}
 
 PRIORITY_DOC_FILENAME_RULES = [
@@ -1060,6 +1081,101 @@ def _extract_roles(
     return roles, evidence
 
 
+def _normalize_role_token(value: str) -> str:
+    return re.sub(r"\s+", "", str(value or "").strip()).lower()
+
+
+def _normalize_role_labels(
+    roles: list[str],
+    role_evidence: list[dict[str, Any]],
+    domain_key: str,
+) -> list[str]:
+    tokens: list[str] = []
+    for role in roles:
+        if role:
+            tokens.append(str(role))
+    for item in role_evidence:
+        symbol = str(item.get("symbol") or "").strip()
+        if symbol:
+            tokens.append(symbol)
+
+    cleaned_tokens = [_normalize_role_token(token) for token in tokens if _normalize_role_token(token)]
+    detected_labels: list[str] = []
+    matched_tokens: set[str] = set()
+    for label, aliases in ROLE_ALIAS_GROUPS:
+        if any(_normalize_role_token(alias) in cleaned_tokens for alias in aliases):
+            detected_labels.append(label)
+            matched_tokens.update(_normalize_role_token(alias) for alias in aliases)
+
+    if domain_key == "health_record":
+        health_roles = [label for label in ROLE_DOMAIN_ORDERS["health_record"] if label in detected_labels]
+        if health_roles:
+            return health_roles
+
+    ordered: list[str] = []
+    preferred_order = ROLE_DOMAIN_ORDERS.get(domain_key, [])
+    for label in preferred_order:
+        if label in detected_labels and label not in ordered:
+            ordered.append(label)
+    for label, _ in ROLE_ALIAS_GROUPS:
+        if label in detected_labels and label not in ordered:
+            ordered.append(label)
+
+    extras: list[str] = []
+    for raw in tokens:
+        clean = str(raw or "").strip()
+        normalized = _normalize_role_token(clean)
+        if not clean or normalized in matched_tokens:
+            continue
+        clean = re.sub(r"[_-]+", " ", clean)
+        if clean and clean not in ordered and clean not in extras:
+            extras.append(clean)
+    return (ordered + extras)[:12]
+
+
+def _generic_role_row(role: str) -> list[str]:
+    if role in {"管理员", "监管方"}:
+        return [role, "负责平台配置、角色审核、运行监管或审计支撑。", "拥有管理与审计权限，但不直接替代业务角色处理核心业务数据。"]
+    if role in {"用户", "患者", "消费者"}:
+        return [role, "发起基础业务操作并查看与本人相关的处理结果。", "仅能访问与本人身份或授权关系直接相关的数据与功能入口。"]
+    if role in {"医生", "茶农", "加工厂", "质检机构", "物流商", "经销商", "生产方", "医院"}:
+        return [role, "负责所属业务环节的数据录入、状态维护与结果反馈。", "仅能维护本角色负责环节的数据，不可越权修改其他主体的核心记录。"]
+    return [role, "参与系统业务流程中的录入、审核或查询等操作。", "只能访问角色授权范围内的功能模块与业务对象。"]
+
+
+def _role_matrix_rows(domain_key: str, roles: list[str]) -> list[list[str]]:
+    if domain_key == "health_record":
+        row_map = {
+            "患者": ["患者", "核验本人健康档案、确认上链并处理医生访问授权。", "仅可查看本人档案，并决定授权通过、维持或撤销。"],
+            "医生": ["医生", "创建健康档案、发起访问申请，并在获权后查看诊疗信息。", "仅能维护本人录入档案，查看明文必须经过患者授权。"],
+            "管理员": ["管理员", "负责账户审核、平台配置、运行维护和审计支撑。", "不直接参与患者诊疗内容编辑，只承担平台级治理职责。"],
+        }
+        ordered_roles = [role for role in ROLE_DOMAIN_ORDERS["health_record"] if role in roles]
+    elif domain_key == "traceability":
+        row_map = {
+            "管理员": ["管理员", "维护平台用户、组织审核、预警处置与审计分析。", "可执行平台级治理与监管操作，但不替代业务主体填报生产流转数据。"],
+            "茶农": ["茶农", "登记种植批次、农事过程和原始产地信息。", "仅维护本人负责批次的基础生产数据。"],
+            "加工厂": ["加工厂", "维护加工、包装、入库等生产流转记录。", "仅能更新授权加工环节的信息，不能改写其他主体的历史记录。"],
+            "质检机构": ["质检机构", "录入检测结果并输出批次质量结论。", "仅能维护检测相关数据，不参与生产与销售数据改写。"],
+            "物流商": ["物流商", "更新运输节点、交接状态和物流追踪信息。", "仅能维护物流环节状态，不能修改批次源头信息。"],
+            "经销商": ["经销商", "维护上架、销售和去向记录，支撑终端查询。", "仅能处理销售环节相关数据，不可修改前序生产记录。"],
+            "消费者": ["消费者", "查询产品溯源结果并核验关键信息。", "仅具备查询权限，不参与业务数据写入。"],
+            "监管方": ["监管方", "查看全流程记录、审计异常并执行监管决策。", "以监管与核查为主，不直接填报普通业务数据。"],
+        }
+        ordered_roles = [role for role in ROLE_DOMAIN_ORDERS["traceability"] if role in roles]
+    else:
+        row_map = {}
+        ordered_roles = list(roles)
+
+    rows: list[list[str]] = []
+    for role in ordered_roles:
+        rows.append(list(row_map.get(role, _generic_role_row(role))))
+    for role in roles:
+        if role not in ordered_roles:
+            rows.append(_generic_role_row(role))
+    return rows[:12]
+
+
 def _extract_business_flows(
     doc_texts: list[tuple[Path, str]],
     blockchain_items: list[str],
@@ -1332,13 +1448,10 @@ def _build_technology_assets(
 def _build_role_assets(
     project_root: Path,
     roles: list[str],
-    role_evidence: list[dict[str, Any]],
+    domain_key: str,
 ) -> dict[str, list[dict[str, Any]]]:
     assets = _empty_assets()
-    role_sources = {item["symbol"]: item["path"] for item in role_evidence}
-    rows = []
-    for role in roles[:12]:
-        rows.append([role, role_sources.get(role, "derived-from-pages-or-docs"), "角色职责见项目规划与页面权限配置"])
+    rows = _role_matrix_rows(domain_key, roles)
     if rows:
         _add_asset(
             assets,
@@ -1350,8 +1463,8 @@ def _build_role_assets(
                 chapter_candidates=["03-需求分析.md"],
                 section_candidates=["3.3 角色与用例分析"],
                 evidence_level="derived",
-                note="可直接转为需求分析中的角色职责表。",
-                table_headers=["角色", "证据来源", "说明"],
+                note="可直接转为需求分析中的角色职责表；正文不应暴露源文件名、证据路径或调试字段。",
+                table_headers=["角色", "主要职责", "权限边界"],
                 table_rows=rows,
             ),
         )
@@ -3381,11 +3494,13 @@ def run_extract(config_path: Path) -> dict[str, Any]:
         limit=10,
     )
     architecture_evidence = frontend_evidence[:3] + backend_evidence[:3] + db_evidence[:2] + blockchain_evidence[:4]
+    domain_key = _detect_domain_key(manifest["title"], api_items, page_names, flows)
+    normalized_roles = _normalize_role_labels(roles, role_evidence, domain_key)
     roles_summary = _extract_role_outline(function_doc[1]) if function_doc else []
-    if not roles_summary:
-        roles_summary = [f"roles detected: {', '.join(roles) if roles else 'none'}"]
-    else:
-        roles_summary = _prepend_unique(roles_summary, [f"roles detected: {', '.join(roles) if roles else 'none'}"], limit=6)
+    if normalized_roles:
+        roles_summary = _prepend_unique(roles_summary, [f"角色体系：{'、'.join(normalized_roles)}"], limit=6)
+    elif not roles_summary:
+        roles_summary = ["角色体系待根据页面权限与业务流程补充。"]
 
     database_summary = list(tables or ["no database table detected"])
     if database_doc:
@@ -3422,7 +3537,7 @@ def run_extract(config_path: Path) -> dict[str, Any]:
         flows,
     )
     technology_assets = _build_technology_assets(project_root, manifest, source_paths)
-    role_assets = _build_role_assets(project_root, roles, role_evidence)
+    role_assets = _build_role_assets(project_root, normalized_roles, domain_key)
     api_assets = _build_api_assets(project_root, api_items, backend_evidence, backend_api_doc)
     database_assets = _build_database_assets(project_root, database_file, tables, database_doc)
     blockchain_assets = _build_blockchain_assets(
@@ -3444,7 +3559,7 @@ def run_extract(config_path: Path) -> dict[str, Any]:
             database_doc=database_doc,
             chaincode_doc=chaincode_doc,
         )
-        if _detect_domain_key(manifest["title"], api_items, page_names, flows) == "traceability"
+        if domain_key == "traceability"
         else {
             "architecture": _empty_assets(),
             "blockchain_design": _empty_assets(),

@@ -51,8 +51,42 @@ def _image_generation_config(config: dict[str, Any], workspace_root: Path) -> di
     return resolved
 
 
+def _guess_mime_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix == ".png":
+        return "image/png"
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".webp":
+        return "image/webp"
+    raise RuntimeError(f"unsupported reference image format: {path}")
+
+
+def _normalize_reference_images(raw_items: Any, workspace_root: Path) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for raw in raw_items or []:
+        if not isinstance(raw, dict):
+            continue
+        raw_path = str(raw.get("path", "") or "").strip()
+        if not raw_path:
+            continue
+        path = Path(raw_path)
+        resolved = path if path.is_absolute() else (workspace_root / path).resolve()
+        normalized.append(
+            {
+                "path": make_relative(resolved, workspace_root),
+                "abs_path": resolved,
+                "role": str(raw.get("role", "") or "").strip(),
+                "note": str(raw.get("note", "") or "").strip(),
+                "mime_type": _guess_mime_type(resolved),
+            }
+        )
+    return normalized
+
+
 def _normalize_ai_spec(figure_no: str, raw_spec: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
     spec = dict(raw_spec)
+    workspace_root = defaults["workspace_root"]
     return {
         "figure_no": figure_no,
         "caption": str(spec.get("caption", "") or "").strip(),
@@ -66,11 +100,13 @@ def _normalize_ai_spec(figure_no: str, raw_spec: dict[str, Any], defaults: dict[
         "quality": str(spec.get("quality", "") or defaults["default_quality"]).strip(),
         "size": str(spec.get("size", "") or defaults["default_size"]).strip(),
         "prompt_override": str(spec.get("prompt_override", "") or "").strip(),
+        "reference_images": _normalize_reference_images(spec.get("reference_images") or [], workspace_root),
     }
 
 
 def _enabled_ai_specs(config: dict[str, Any], workspace_root: Path) -> dict[str, dict[str, Any]]:
     defaults = _image_generation_config(config, workspace_root)
+    defaults["workspace_root"] = workspace_root
     if not defaults["enabled"]:
         return {}
     normalized: dict[str, dict[str, Any]] = {}
@@ -123,7 +159,21 @@ def _save_prompt_manifest(config: dict[str, Any], workspace_root: Path, manifest
 
 def _build_prompt(metadata: dict[str, Any], spec: dict[str, Any]) -> str:
     if spec["prompt_override"]:
-        return spec["prompt_override"]
+        prompt = spec["prompt_override"]
+        if spec.get("reference_images"):
+            reference_lines = []
+            for index, ref in enumerate(spec.get("reference_images") or [], start=1):
+                note = str(ref.get("note", "") or "").strip()
+                role = str(ref.get("role", "") or "").strip()
+                segments = [f"参考图{index}"]
+                if role:
+                    segments.append(f"角色：{role}")
+                if note:
+                    segments.append(f"要求：{note}")
+                reference_lines.append("；".join(segments))
+            if reference_lines:
+                prompt = prompt.rstrip() + "\n\n参考图使用说明：" + " | ".join(reference_lines)
+        return prompt
 
     chain_platform = str(metadata.get("chain_platform", "") or "").strip().lower()
     chain_label = CHAIN_LABELS.get(chain_platform, chain_platform.upper()) if chain_platform else "区块链"
@@ -160,6 +210,8 @@ def _build_prompt(metadata: dict[str, Any], spec: dict[str, Any]) -> str:
     ]
     if spec["chapter"]:
         parts.append(f"所属章节：{spec['chapter']}")
+    if spec.get("reference_images"):
+        parts.append("已附参考图，请只继承其布局组织、线框风格与模块分组方式，不要照搬旧图中的标题、噪点、装饰或错误文字。")
     parts.extend(
         [
             "总体版式：横向排版，主体居中，层次清楚，留白充足，适合直接插入 A4 论文页面。",
@@ -240,10 +292,35 @@ def _build_prompt(metadata: dict[str, Any], spec: dict[str, Any]) -> str:
 
     if spec.get("style_notes"):
         parts.append(f"补充风格要求：{spec['style_notes']}")
+    if spec.get("reference_images"):
+        reference_lines = []
+        for index, ref in enumerate(spec.get("reference_images") or [], start=1):
+            note = str(ref.get("note", "") or "").strip()
+            role = str(ref.get("role", "") or "").strip()
+            segments = [f"参考图{index}"]
+            if role:
+                segments.append(f"角色：{role}")
+            if note:
+                segments.append(f"要求：{note}")
+            reference_lines.append("；".join(segments))
+        if reference_lines:
+            parts.append("参考图使用说明：" + " | ".join(reference_lines))
     return "\n".join(part for part in parts if part.strip())
 
 
 def _spec_hash(settings: dict[str, Any], metadata: dict[str, Any], spec: dict[str, Any], prompt: str) -> str:
+    reference_payload: list[dict[str, Any]] = []
+    for ref in spec.get("reference_images") or []:
+        abs_path = Path(ref["abs_path"])
+        content_hash = hashlib.sha1(abs_path.read_bytes()).hexdigest()[:16] if abs_path.exists() else "missing"
+        reference_payload.append(
+            {
+                "path": str(ref.get("path", "") or ""),
+                "role": str(ref.get("role", "") or ""),
+                "note": str(ref.get("note", "") or ""),
+                "content_hash": content_hash,
+            }
+        )
     payload = {
         "schema_version": AI_IMAGE_SCHEMA_VERSION,
         "provider": settings["provider"],
@@ -259,6 +336,7 @@ def _spec_hash(settings: dict[str, Any], metadata: dict[str, Any], spec: dict[st
         "quality": spec["quality"],
         "size": spec["size"],
         "override_builtin": spec["override_builtin"],
+        "reference_images": reference_payload,
         "project_title": metadata.get("title", ""),
         "chain_platform": metadata.get("chain_platform", ""),
         "prompt": prompt,
@@ -301,6 +379,15 @@ def _validate_prepare_request(
             raise RuntimeError(
                 f"ai_figure_specs.{figure_no} conflicts with a built-in generated figure; set override_builtin=true to replace it"
             )
+        if spec.get("reference_images") and _provider_kind(settings) != "gemini":
+            raise RuntimeError(
+                f"ai_figure_specs.{figure_no}.reference_images currently requires image_generation.provider=zetatechs-gemini"
+            )
+        for ref in spec.get("reference_images") or []:
+            if not Path(ref["abs_path"]).exists():
+                raise RuntimeError(
+                    f"ai_figure_specs.{figure_no}.reference_images path does not exist: {ref['path']}"
+                )
 
     return settings, filtered
 
@@ -437,15 +524,29 @@ def _gemini_aspect_ratio(size: str) -> str:
 
 def _request_gemini_generate_content(settings: dict[str, Any], api_key: str, spec: dict[str, Any], prompt: str) -> tuple[bytes, str]:
     endpoint = _gemini_generate_content_endpoint(settings, api_key, spec["model"])
+    parts: list[dict[str, Any]] = [{"text": prompt}]
+    for index, ref in enumerate(spec.get("reference_images") or [], start=1):
+        note = str(ref.get("note", "") or "").strip()
+        role = str(ref.get("role", "") or "").strip()
+        intro_segments = [f"参考图 {index}"]
+        if role:
+            intro_segments.append(f"角色：{role}")
+        if note:
+            intro_segments.append(f"说明：{note}")
+        parts.append({"text": "；".join(intro_segments)})
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": str(ref.get("mime_type", "") or "image/png"),
+                    "data": base64.b64encode(Path(ref["abs_path"]).read_bytes()).decode("utf-8"),
+                }
+            }
+        )
     payload = {
         "contents": [
             {
                 "role": "user",
-                "parts": [
-                    {
-                        "text": prompt,
-                    }
-                ],
+                "parts": parts,
             }
         ],
         "generationConfig": {
@@ -597,6 +698,14 @@ def run_prepare_ai_figures(
             "model": spec["model"],
             "quality": spec["quality"],
             "size": spec["size"],
+            "reference_images": [
+                {
+                    "path": str(ref.get("path", "") or ""),
+                    "role": str(ref.get("role", "") or ""),
+                    "note": str(ref.get("note", "") or ""),
+                }
+                for ref in spec.get("reference_images") or []
+            ],
             "prompt": prompt,
             "revised_prompt": revised_prompt,
             "path": output_rel,

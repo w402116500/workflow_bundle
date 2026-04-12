@@ -193,6 +193,33 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
 
         config_path = Path(stage["config_path"])
         _require(config_path.exists(), f"fixture workspace config missing: {config_path}")
+        material_pack_path = fixture_workspace / "docs" / "materials" / "material_pack.json"
+        _require(material_pack_path.exists(), f"fixture material pack missing: {material_pack_path}")
+
+        material_pack = read_json(material_pack_path)
+        role_tables = (
+            material_pack.get("sections", {})
+            .get("roles_permissions", {})
+            .get("assets", {})
+            .get("tables", [])
+        )
+        role_table = next((item for item in role_tables if item.get("kind") == "role-matrix"), {})
+        _require(role_table, "fixture role-matrix asset missing after smoke-intake")
+        role_headers = role_table.get("table_headers") or []
+        role_rows = role_table.get("table_rows") or []
+        file_leak_pattern = re.compile(r"(?i)\b[\w.-]+\.(?:md|txt|docx|sql|json|vue|go|java|ts|js)\b|derived-from-pages-or-docs")
+        for label, ok, actual in (
+            ("fixture_role_matrix_headers", role_headers == ["角色", "主要职责", "权限边界"], role_headers),
+            ("fixture_role_matrix_rows_present", len(role_rows) > 0, len(role_rows)),
+            (
+                "fixture_role_matrix_no_file_leaks",
+                not any(file_leak_pattern.search(str(cell or "")) for row in role_rows for cell in row),
+                role_rows,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture role-matrix workflow regression detected")
 
         for idx, chapter in enumerate(("05-系统实现.md", "06-系统测试.md"), start=2):
             command = [

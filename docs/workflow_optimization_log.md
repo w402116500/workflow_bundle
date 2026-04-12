@@ -4810,3 +4810,35 @@
   - `smoke-intake` now produces the built-in figure map before the terminal workspace check
   - this clears the earlier ordering bug where figure blocking ran before any workflow-owned figures were generated
   - bundled full selftest still has older fixture debt around stub chapter marker / contract coverage, but it no longer fails on the pre-generation ordering issue itself
+
+## 2026-04-12 17:45:05 +08:00
+
+### Step 214
+- Action: Patched `workflow_bundle/tools/core/extract.py` and `workflow_bundle/tools/core/selftest.py` to repair Chapter 3 role-matrix generation, then replayed the formal health-record workspace with `sync-workflow-assets -> extract -> prepare-chapter -> finalize-chapter -> check-workspace`.
+- Purpose: `表3.1 系统角色与职责摘要` in the health-record workspace leaked planning-document filenames because `_build_role_assets()` copied `role_evidence.path` into a `证据来源` column and kept raw aliases such as `user` / `admin` / `hospital`. That made both the Chapter 3 packet and the thesis正文 carry repository-facing evidence fields instead of thesis-facing role-responsibility content.
+- Result:
+  - added role normalization plus domain ordering so health-record workspaces collapse raw role hints into the thesis-facing trio `患者 / 医生 / 管理员`
+  - replaced the role-matrix schema with `角色 | 主要职责 | 权限边界`, removing source filenames and `derived-from-pages-or-docs` from正文-facing table assets
+  - kept raw `role_evidence` only in the debug/material layer instead of exposing it in the chapter asset table
+  - extended `selftest.py` so the bundled fixture now asserts that the generated role-matrix uses writing-safe headers and contains no leaked filenames
+  - replayed `/home/ub/test/workspace_dir` and regenerated `docs/materials/material_pack.json`, `docs/writing/chapter_packets/03-需求分析.json`, and `polished_v3/03-需求分析.md`; the refreshed `表3.1` now contains only `患者 / 医生 / 管理员` plus职责/权限边界 columns
+  - validation passed for:
+    - `python3 tools/cli.py sync-workflow-assets --config /home/ub/test/workspace_dir/workflow/configs/workspace.json`
+    - `python3 tools/cli.py extract --config /home/ub/test/workspace_dir/workflow/configs/workspace.json`
+    - `python3 tools/cli.py prepare-chapter --config /home/ub/test/workspace_dir/workflow/configs/workspace.json --chapter 03-需求分析.md`
+    - `python3 tools/cli.py finalize-chapter --config /home/ub/test/workspace_dir/workflow/configs/workspace.json --chapter 03-需求分析.md --status reviewed`
+    - `python3 tools/cli.py check-workspace --config /home/ub/test/workspace_dir/workflow/configs/workspace.json`
+
+## 2026-04-12 19:32:00 +08:00
+
+### Step 215
+- Action: Patched `workflow_bundle/tools/core/ai_image_generation.py` so formal AI figure generation now supports `reference_images`, then switched the health-record workspace `图4.1 系统总体架构图` to the new `prompt_override + reference_images` path and regenerated the figure on the formal workspace.
+- Purpose: The user asked to move `图4.1` away from the old deterministic fallback and use AI generation in a controlled thesis-diagram style, specifically by combining a strict prompt with a reference image. Before this fix, the workflow could not actually carry reference images through dry-run manifests, cache hashing, provider requests, and validation, so “提示词 + 参考图” could not become a stable, replayable workflow capability.
+- Result:
+  - normalized `ai_figure_specs[*].reference_images` into validated workspace-aware entries with `path / abs_path / role / note / mime_type`
+  - extended prompt assembly so `prompt_override` and reference-image guidance can coexist instead of one suppressing the other
+  - included reference-image content hashes in `spec_hash`, preventing stale cache hits after the reference image changes
+  - wrote reference-image metadata into `prompt_manifest.json` and `ai_figure_prepare_summary.json`, making dry-run / replay outputs auditable
+  - Gemini requests now send the attached reference images as inline image parts instead of text-only prompts
+  - validated the new path with `python3 -m py_compile tools/core/ai_image_generation.py`, `prepare-ai-figures --dry-run`, and `prepare-ai-figures --force`
+  - regenerated `/home/ub/test/workspace_dir/docs/images/generated_ai/fig4-1-ai.png`; the formal workspace now uses the AI-rendered paper-style architecture figure for `图4.1`
