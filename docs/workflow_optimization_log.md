@@ -4760,3 +4760,14 @@
   - Updated fixture selftest to inject a minimal `.dbdia` source and verify `dbdia-er` output plus sidecar assets.
   - Updated README/spec/testing/command-map docs to describe `er_figure_specs`, vendored runtime requirements, and cache recovery expectations.
   - Updated `.gitignore` so vendor build caches and local install artifacts stay out of git.
+
+## 2026-04-12 13:35:00 +0800
+
+### Step 210
+- Action: Synced the validated health-record workflow fixes into the official git-tracked bundle repository, covering `chapter_profile`, `extract`, `page_screenshot_assets`, `workspace_checks`, `release_summary`, and `selftest`.
+- Purpose: The health-record thesis onboarding and Chapter 5 screenshot repairs had already been validated in the local test bundle, but the remote repository still lacked the formal workflow support required to keep those fixes durable and shareable.
+- Result:
+  - added the full health-record Chapter 5 page-screenshot contract, deterministic screenshot staging paths, and section-level blocking validation
+  - added health-record extraction support for `assets/frontend_manual_test_*`, FISCO-oriented Chapter 4 wording, and Chapter 6 health-record test tables
+  - extended release summaries and selftests so stale / cross-section page screenshots are blocked and regression-tested
+

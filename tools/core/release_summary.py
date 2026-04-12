@@ -70,6 +70,8 @@ def _preflight_summary(preflight: dict[str, Any]) -> dict[str, Any]:
         "packet_status_counter": preflight["packet_status_counter"],
         "packet_kind_counter": preflight["packet_kind_counter"],
         "blocking_entries": preflight["blocking_entries"],
+        "figure_integration_blocking_entries": preflight.get("figure_integration_blocking_entries", []),
+        "chapter5_page_screenshot_blocking_entries": preflight.get("chapter5_page_screenshot_blocking_entries", []),
         "style_warning_entries": preflight["style_warning_entries"],
         "placeholder_entries": preflight["placeholder_entries"],
     }

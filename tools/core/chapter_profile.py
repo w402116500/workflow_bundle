@@ -98,6 +98,20 @@ def _chapter5_screenshot_requirements(modules: list[dict[str, Any]]) -> list[dic
         ]
 
     module_keys = {str(module.get("key", "")).strip() for module in modules}
+    if {"identity", "record", "access", "audit"}.issubset(module_keys):
+        return [
+            _asset_requirement("figures", "test-screenshot", "实现章节登录页面截图", section="5.2.1 注册与登录实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节注册页面截图", section="5.2.1 注册与登录实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节个人资料页面截图", section="5.2.2 个人资料与权限控制实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节账号管理页面截图", section="5.2.3 医生审核与账号管理实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节档案登记页面截图", section="5.3.1 档案登记与初诊录入实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节档案确认页面截图", section="5.3.2 患者确认与链上存证实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节档案展示页面截图", section="5.3.3 档案展示与健康数据可视化实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节授权处理页面截图", section="5.4.1 授权与撤销实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节授权状态反馈页面截图", section="5.4.2 授权状态校验与反馈实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节授权查询页面截图", section="5.5.1 带权限查询实现"),
+            _asset_requirement("figures", "test-screenshot", "实现章节查询结果与同步状态页面截图", section="5.5.2 查询审计与链下同步实现"),
+        ]
     if {"identity", "batch", "record", "trace"}.issubset(module_keys):
         return [
             _asset_requirement("figures", "test-screenshot", "实现章节注册登录页面截图", section="5.2.1 注册登录与会话建立实现"),
@@ -424,7 +438,20 @@ def _base_required_assets(domain_key: str) -> dict[str, list[dict[str, Any]]]:
         ]
         design_tables = [
             _asset_requirement("tables", "database-table-summary", "表4.1 核心数据表摘要", section="4.3.3 主要数据表结构描述"),
-            _asset_requirement("tables", "blockchain-transaction-table", "表4.2 链码事务与关键链上能力清单", section="4.4 区块链与链码设计"),
+            _asset_requirement("tables", "blockchain-transaction-table", "表4.2 合约事务与关键链上能力清单", section="4.4 区块链与合约设计"),
+        ]
+        chapter6_tables = [
+            _asset_requirement("tables", "server-hardware-config", "表6.1 服务器端硬件配置表", section="6.1.1 服务器端"),
+            _asset_requirement("tables", "server-software-config", "表6.2 服务器端软件配置表", section="6.1.1 服务器端"),
+            _asset_requirement("tables", "client-hardware-config", "表6.3 客户端硬件配置表", section="6.1.2 客户端"),
+            _asset_requirement("tables", "client-software-config", "表6.4 客户端软件配置表", section="6.1.2 客户端"),
+            _asset_requirement("tables", "identity-test-table", "表6.5 用户与身份管理功能测试表", section="6.2.1 用户与身份管理功能测试"),
+            _asset_requirement("tables", "record-test-table", "表6.6 健康档案管理功能测试表", section="6.2.2 健康档案管理功能测试"),
+            _asset_requirement("tables", "access-test-table", "表6.7 访问授权管理功能测试表", section="6.2.3 访问授权管理功能测试"),
+            _asset_requirement("tables", "audit-test-table", "表6.8 查询与审计追溯功能测试表", section="6.2.4 查询与审计追溯功能测试"),
+            _asset_requirement("tables", "core-flow-test-table", "表6.9 功能测试用例（核心流程汇总）", section="6.2.6 核心流程用例汇总"),
+            _asset_requirement("tables", "nonfunctional-test-table", "表6.10 非功能测试项", section="6.3 非功能测试"),
+            _asset_requirement("test_artifacts", "test-document", "测试章节至少引用 2 项测试证据", min_count=2, section="6.2 功能测试"),
         ]
     elif domain_key == "traceability":
         design_figures = [
@@ -447,34 +474,7 @@ def _base_required_assets(domain_key: str) -> dict[str, list[dict[str, Any]]]:
             _asset_requirement("tables", "blockchain-transaction-table", "表4.3 链码事务与关键链上能力清单", section="4.4 区块链与链码设计"),
             _asset_requirement("tables", "security-risk-summary-table", "表4.4 安全机制—风险—落点汇总", section="4.6.2 安全机制汇总"),
         ]
-    else:
-        design_figures = [
-            _asset_requirement("figures", "architecture-diagram", "图4.1 系统总体架构图", section="4.1 系统架构设计"),
-            _asset_requirement("figures", "er-diagram", "图4.2 数据库E-R图", section="4.3.2 概念模型 E-R"),
-            _asset_requirement("figures", "flow-diagram", "图4.3 核心业务流程图一", section="4.5.1 批次创建与链上登记流程"),
-            _asset_requirement("figures", "flow-diagram", "图4.4 核心业务流程图二", section="4.5.2 多环节记录提交与状态流转流程"),
-            _asset_requirement("figures", "flow-diagram", "图4.5 核心业务流程图三", section="4.5.3 溯源码绑定与追溯查询流程"),
-        ]
-        design_tables = [
-            _asset_requirement("tables", "database-table-summary", "表4.1 核心数据表摘要", section="4.3.3 主要数据表结构描述"),
-            _asset_requirement("tables", "blockchain-transaction-table", "表4.2 链码事务与关键链上能力清单", section="4.4 区块链与链码设计"),
-        ]
-
-    return {
-        "02-系统开发工具及技术介绍.md": [
-            _asset_requirement("tables", "tech-stack-summary", "表2.1 技术栈与关键组件清单", section="2.1 技术栈与选型概览"),
-        ],
-        "03-需求分析.md": [
-            _asset_requirement("tables", "role-matrix", "表3.1 系统角色与职责摘要", section="3.3 角色与用例分析"),
-        ],
-        "04-系统设计.md": [
-            *design_figures,
-            *design_tables,
-        ],
-        "05-系统实现.md": [
-            _asset_requirement("figures", "system-function-structure", "图5.1 系统功能结构图", section="5 系统实现"),
-        ],
-        "06-系统测试.md": [
+        chapter6_tables = [
             _asset_requirement("tables", "server-hardware-config", "表6.1 服务器端硬件配置表", section="6.1.1 服务器端"),
             _asset_requirement("tables", "server-software-config", "表6.2 服务器端软件配置表", section="6.1.1 服务器端"),
             _asset_requirement("tables", "client-hardware-config", "表6.3 客户端硬件配置表", section="6.1.2 客户端"),
@@ -487,6 +487,51 @@ def _base_required_assets(domain_key: str) -> dict[str, list[dict[str, Any]]]:
             _asset_requirement("tables", "core-flow-test-table", "表6.10 功能测试用例（核心流程汇总）", section="6.2.6 核心流程用例汇总"),
             _asset_requirement("tables", "nonfunctional-test-table", "表6.11 非功能测试项", section="6.3 非功能测试"),
             _asset_requirement("test_artifacts", "test-document", "测试章节至少引用 2 项测试证据", min_count=2, section="6.2 功能测试"),
+        ]
+    else:
+        design_figures = [
+            _asset_requirement("figures", "architecture-diagram", "图4.1 系统总体架构图", section="4.1 系统架构设计"),
+            _asset_requirement("figures", "er-diagram", "图4.2 数据库E-R图", section="4.3.2 概念模型 E-R"),
+            _asset_requirement("figures", "flow-diagram", "图4.3 核心业务流程图一", section="4.5.1 批次创建与链上登记流程"),
+            _asset_requirement("figures", "flow-diagram", "图4.4 核心业务流程图二", section="4.5.2 多环节记录提交与状态流转流程"),
+            _asset_requirement("figures", "flow-diagram", "图4.5 核心业务流程图三", section="4.5.3 溯源码绑定与追溯查询流程"),
+        ]
+        design_tables = [
+            _asset_requirement("tables", "database-table-summary", "表4.1 核心数据表摘要", section="4.3.3 主要数据表结构描述"),
+            _asset_requirement("tables", "blockchain-transaction-table", "表4.2 链码事务与关键链上能力清单", section="4.4 区块链与链码设计"),
+        ]
+        chapter6_tables = [
+            _asset_requirement("tables", "server-hardware-config", "表6.1 服务器端硬件配置表", section="6.1.1 服务器端"),
+            _asset_requirement("tables", "server-software-config", "表6.2 服务器端软件配置表", section="6.1.1 服务器端"),
+            _asset_requirement("tables", "client-hardware-config", "表6.3 客户端硬件配置表", section="6.1.2 客户端"),
+            _asset_requirement("tables", "client-software-config", "表6.4 客户端软件配置表", section="6.1.2 客户端"),
+            _asset_requirement("tables", "identity-test-table", "表6.5 用户与权限管理功能测试表", section="6.2.1 用户与权限管理功能测试"),
+            _asset_requirement("tables", "batch-test-table", "表6.6 批次与主档管理功能测试表", section="6.2.2 批次与主档管理功能测试"),
+            _asset_requirement("tables", "record-test-table", "表6.7 生产流转记录管理功能测试表", section="6.2.3 生产流转记录管理功能测试"),
+            _asset_requirement("tables", "trace-test-table", "表6.8 溯源码与追溯查询功能测试表", section="6.2.4 溯源码与追溯查询功能测试"),
+            _asset_requirement("tables", "regulator-test-table", "表6.9 监管预警与审计分析功能测试表", section="6.2.5 监管预警与审计分析功能测试"),
+            _asset_requirement("tables", "core-flow-test-table", "表6.10 功能测试用例（核心流程汇总）", section="6.2.6 核心流程用例汇总"),
+            _asset_requirement("tables", "nonfunctional-test-table", "表6.11 非功能测试项", section="6.3 非功能测试"),
+            _asset_requirement("test_artifacts", "test-document", "测试章节至少引用 2 项测试证据", min_count=2, section="6.2 功能测试"),
+        ]
+
+    return {
+        "02-系统开发工具及技术介绍.md": [
+            _asset_requirement("tables", "tech-stack-summary", "表2.1 技术栈与关键组件清单", section="2.1 技术栈与选型概览"),
+        ],
+        "03-需求分析.md": [
+            _asset_requirement("figures", "use-case-diagram", "图3.1 系统用例图", section="3.2 功能需求分析"),
+            _asset_requirement("tables", "role-matrix", "表3.1 系统角色与职责摘要", section="3.3 角色与用例分析"),
+        ],
+        "04-系统设计.md": [
+            *design_figures,
+            *design_tables,
+        ],
+        "05-系统实现.md": [
+            _asset_requirement("figures", "system-function-structure", "图5.1 系统功能结构图", section="5 系统实现"),
+        ],
+        "06-系统测试.md": [
+            *chapter6_tables,
         ],
     }
 

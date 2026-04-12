@@ -1837,6 +1837,7 @@ def _build_blockchain_assets(
     blockchain_items: list[str],
     blockchain_evidence: list[dict[str, Any]],
     chaincode_doc: tuple[Path, str] | None = None,
+    chain_platform: str = "fabric",
 ) -> dict[str, list[dict[str, Any]]]:
     assets = _empty_assets()
     doc_entries = (
@@ -1866,17 +1867,25 @@ def _build_blockchain_assets(
     if not tx_rows:
         tx_rows = [[item, "-", item] for item in blockchain_items[:16] if re.match(r"^[A-Z][A-Za-z0-9_]+$", item)]
     if tx_rows:
+        if chain_platform == "fisco":
+            tx_title = "合约事务与关键链上能力清单"
+            section_title = "4.4 区块链与合约设计"
+            tx_note = "适用于区块链设计章节的合约函数清单。"
+        else:
+            tx_title = "链码事务与关键链上能力清单"
+            section_title = "4.4 区块链与链码设计"
+            tx_note = "适用于区块链设计章节的链码事务清单。"
         _add_asset(
             assets,
             _make_asset(
                 project_root,
                 "tables",
                 "blockchain-transaction-table",
-                "链码事务与关键链上能力清单",
+                tx_title,
                 chapter_candidates=["04-系统设计.md"],
-                section_candidates=["4.4 区块链与链码设计"],
+                section_candidates=[section_title],
                 evidence_level="derived",
-                note="适用于区块链设计章节的链码事务清单。",
+                note=tx_note,
                 source_path_override=chaincode_doc and make_relative(chaincode_doc[0], project_root) or "",
                 table_headers=["事务/函数", "主要用途", "符号"],
                 table_rows=tx_rows[:16],
@@ -1888,6 +1897,7 @@ def _build_blockchain_assets(
 def _scan_image_candidates(project_root: Path) -> list[Path]:
     roots = [
         project_root / ".runtime" / "test-artifacts",
+        project_root / "assets",
         project_root / "docs" / "images",
         project_root / "images",
         project_root / "backend" / "storage" / "uploads",
@@ -1926,7 +1936,131 @@ def _test_screenshot_profile(path: Path) -> dict[str, Any]:
         "auto_select": True,
     }
 
-    if "admin-dashboard-and-forbidden-business-route" in stem:
+    health_record_rules = {
+        "01-login-page": {
+            "title": "登录页面截图",
+            "sections": ["5.2.1 注册与登录实现", "6.2.1 用户与身份管理功能测试", "6.2 功能测试"],
+            "selection_score": 98,
+            "selection_group": "health-identity-login",
+        },
+        "02-register-page": {
+            "title": "注册页面截图",
+            "sections": ["5.2.1 注册与登录实现", "6.2.1 用户与身份管理功能测试", "6.2 功能测试"],
+            "selection_score": 96,
+            "selection_group": "health-identity-register",
+        },
+        "03-doctor-profile": {
+            "title": "医生个人资料页面截图",
+            "sections": ["5.2.2 个人资料与权限控制实现", "6.2.1 用户与身份管理功能测试", "6.2 功能测试"],
+            "selection_score": 94,
+            "selection_group": "health-identity-profile-doctor",
+        },
+        "04-change-password-page": {
+            "title": "密码修改页面截图",
+            "sections": ["5.2.3 医生审核与账号管理实现", "6.2.1 用户与身份管理功能测试", "6.2 功能测试"],
+            "selection_score": 92,
+            "selection_group": "health-identity-password",
+        },
+        "05-doctor-record-create-form": {
+            "title": "医生新建档案页面截图",
+            "sections": ["5.3.1 档案登记与初诊录入实现", "6.2.2 健康档案管理功能测试", "6.2 功能测试"],
+            "selection_score": 96,
+            "selection_group": "health-record-create-form",
+        },
+        "06-doctor-record-create-success": {
+            "title": "医生新建档案成功页面截图",
+            "sections": ["5.3.1 档案登记与初诊录入实现", "6.2.2 健康档案管理功能测试", "6.2 功能测试"],
+            "selection_score": 82,
+            "selection_group": "health-record-create-form",
+        },
+        "07-patient-profile": {
+            "title": "患者个人资料页面截图",
+            "sections": ["5.2.2 个人资料与权限控制实现", "6.2.1 用户与身份管理功能测试", "6.2 功能测试"],
+            "selection_score": 88,
+            "selection_group": "health-identity-profile-patient",
+        },
+        "08-patient-pending-list": {
+            "title": "患者待确认档案页面截图",
+            "sections": ["5.3.2 患者确认与链上存证实现", "6.2.2 健康档案管理功能测试", "6.2 功能测试"],
+            "selection_score": 86,
+            "selection_group": "health-record-confirm-pending",
+        },
+        "09-patient-confirm-dialog": {
+            "title": "患者确认档案弹窗截图",
+            "sections": ["5.3.2 患者确认与链上存证实现", "6.2.2 健康档案管理功能测试", "6.2 功能测试"],
+            "selection_score": 94,
+            "selection_group": "health-record-confirm-dialog",
+        },
+        "10-patient-record-list": {
+            "title": "患者档案列表与同步状态页面截图",
+            "sections": ["5.5.2 查询审计与链下同步实现", "6.2.4 查询与审计追溯功能测试", "6.2 功能测试"],
+            "selection_score": 94,
+            "selection_group": "health-audit-patient-record-list",
+        },
+        "11-doctor-record-search": {
+            "title": "医生档案检索与授权状态反馈页面截图",
+            "sections": ["5.4.2 授权状态校验与反馈实现", "6.2.3 访问授权管理功能测试", "6.2.4 查询与审计追溯功能测试", "6.2 功能测试"],
+            "selection_score": 94,
+            "selection_group": "health-access-status-search",
+        },
+        "12-doctor-authorization-list-pending": {
+            "title": "医生授权记录待处理页面截图",
+            "sections": ["5.4.1 授权与撤销实现", "6.2.3 访问授权管理功能测试", "6.2 功能测试"],
+            "selection_score": 84,
+            "selection_group": "health-access-grant-pending-doctor",
+        },
+        "13-patient-authorization-list-pending": {
+            "title": "患者授权处理待处理页面截图",
+            "sections": ["5.4.1 授权与撤销实现", "6.2.3 访问授权管理功能测试", "6.2 功能测试"],
+            "selection_score": 86,
+            "selection_group": "health-access-grant-pending-patient",
+        },
+        "14-patient-grant-dialog": {
+            "title": "患者通过授权弹窗截图",
+            "sections": ["5.4.1 授权与撤销实现", "6.2.3 访问授权管理功能测试", "6.2 功能测试"],
+            "selection_score": 96,
+            "selection_group": "health-access-grant-dialog",
+        },
+        "15-patient-authorization-list-granted": {
+            "title": "患者授权处理已授权页面截图",
+            "sections": ["5.4.1 授权与撤销实现", "6.2.3 访问授权管理功能测试", "6.2 功能测试"],
+            "selection_score": 82,
+            "selection_group": "health-access-grant-patient-granted",
+        },
+        "16-doctor-authorization-list-granted": {
+            "title": "医生授权记录页面截图",
+            "sections": ["5.5.1 带权限查询实现", "6.2.4 查询与审计追溯功能测试", "6.2 功能测试"],
+            "selection_score": 94,
+            "selection_group": "health-audit-doctor-authorization-granted",
+        },
+        "17-doctor-record-view-granted": {
+            "title": "医生查看已授权档案页面截图",
+            "sections": ["5.3.3 档案展示与健康数据可视化实现", "5.5.1 带权限查询实现", "6.2.2 健康档案管理功能测试", "6.2.4 查询与审计追溯功能测试", "6.2 功能测试"],
+            "selection_score": 92,
+            "selection_group": "health-record-view-granted",
+        },
+        "18-patient-authorization-list-revoked": {
+            "title": "患者授权处理已撤销页面截图",
+            "sections": ["5.4.1 授权与撤销实现", "5.4.2 授权状态校验与反馈实现", "6.2.3 访问授权管理功能测试", "6.2 功能测试"],
+            "selection_score": 80,
+            "selection_group": "health-access-revoked-patient",
+        },
+        "19-doctor-authorization-list-revoked": {
+            "title": "医生授权记录已撤销页面截图",
+            "sections": ["5.4.2 授权状态校验与反馈实现", "6.2.3 访问授权管理功能测试", "6.2 功能测试"],
+            "selection_score": 86,
+            "selection_group": "health-access-status-revoked",
+        },
+        "20-doctor-record-view-denied": {
+            "title": "撤销后医生查看受限页面截图",
+            "sections": ["5.4.2 授权状态校验与反馈实现", "5.5.2 查询审计与链下同步实现", "6.2.3 访问授权管理功能测试", "6.2.4 查询与审计追溯功能测试", "6.2 功能测试"],
+            "selection_score": 88,
+            "selection_group": "health-audit-access-denied",
+        },
+    }
+    if stem in health_record_rules:
+        profile.update(health_record_rules[stem])
+    elif "admin-dashboard-and-forbidden-business-route" in stem:
         profile.update(
             {
                 "sections": ["5.2.3 用户管理与权限治理实现", "6.2.1 用户与权限管理功能测试", "6.2 功能测试"],
@@ -2065,7 +2199,7 @@ def _test_screenshot_profile(path: Path) -> dict[str, Any]:
 def _classify_image_asset(path: Path) -> tuple[str, str, list[str], list[str], str]:
     rel = "/".join(path.parts).lower()
     title = _prettify_image_title(path)
-    if ".runtime/test-artifacts" in rel:
+    if ".runtime/test-artifacts" in rel or "assets/frontend_manual_test" in rel:
         profile = _test_screenshot_profile(path)
         return (
             "test-screenshot",
@@ -2373,27 +2507,51 @@ def _build_test_assets(
     browser_desc = "待根据实际页面验证浏览器补充"
     test_tool_desc = "浏览器开发者工具 / Postman" if ("Postman" in (manual_test_doc[1] if manual_test_doc else "")) else "待根据实际测试工具补充"
 
+    domain_key = _detect_domain_key(manifest_title, [], [], flow_items)
+    all_docs_text = "\n".join(text for _, text in doc_texts)
+    docs_lower = all_docs_text.lower()
+
     backend_framework = tech_route_map.get("后端框架", {}).get("技术选型", "")
     database_label = tech_route_map.get("数据库", {}).get("技术选型", "")
     chain_platform = tech_route_map.get("区块链平台", {}).get("技术选型", "")
     chain_sdk = tech_route_map.get("链交互方式", {}).get("技术选型", "")
     frontend_framework = tech_route_map.get("前端框架", {}).get("技术选型", "")
     frontend_ui = tech_route_map.get("UI 组件库", {}).get("技术选型", "")
+    frontend_stack_real = find_line(frontend_text, r"\|\s*前端技术栈\s*\|\s*`?([^|`]+)`?\s*\|")
+    chain_access_desc = find_line(frontend_text, r"\|\s*区块链接入\s*\|\s*`?([^|`]+)`?\s*\|")
+    screenshot_dir = find_line(frontend_text, r"\|\s*截图目录\s*\|\s*`?([^|`]+)`?\s*\|")
 
-    if not backend_framework:
-        backend_framework = fallback_value(re.sub(r"`", "", backend_stack), "Gin + GORM + MySQL + Fabric Gateway")
-    if not database_label:
-        database_label = "MySQL" if "mysql" in database_desc.lower() else "待根据数据库环境补充"
-    if not chain_platform:
-        chain_platform = "Hyperledger Fabric 2.4.9" if "fabric" in f"{fabric_network} {deploy_text}".lower() else "待根据链网环境补充"
-    if not chain_sdk:
-        chain_sdk = "Fabric Gateway" if "gateway" in backend_stack.lower() or "gateway" in backend_text.lower() else "待补充"
-    if not frontend_framework:
-        frontend_framework = "Vue 3"
-    frontend_stack = frontend_framework
-    if frontend_ui:
+    if domain_key == "health_record":
+        if not backend_framework:
+            backend_framework = "Spring Boot + MyBatis" if "spring boot" in docs_lower else "Spring Boot + MyBatis"
+        if not database_label:
+            database_label = "MySQL"
+        if not chain_platform:
+            chain_platform = "FISCO BCOS"
+        if not chain_sdk:
+            chain_sdk = "WeBASE Front / WeBASE Sign + FISCO BCOS Java SDK"
+        if not frontend_framework:
+            frontend_framework = "Vue2"
+        if not frontend_ui and "element ui" in f"{frontend_text} {all_docs_text}".lower():
+            frontend_ui = "Element UI"
+        browser_desc = "Chrome / Edge（按实际测试浏览器补充版本号）" if frontend_url else browser_desc
+        if "playwright" in frontend_text.lower() or "自动化补图脚本" in frontend_text:
+            test_tool_desc = "前端全流程手动测试文档 + Playwright 补图脚本 + 浏览器开发者工具"
+    else:
+        if not backend_framework:
+            backend_framework = fallback_value(re.sub(r"`", "", backend_stack), "Gin + GORM + MySQL + Fabric Gateway")
+        if not database_label:
+            database_label = "MySQL" if "mysql" in database_desc.lower() else "待根据数据库环境补充"
+        if not chain_platform:
+            chain_platform = "Hyperledger Fabric 2.4.9" if "fabric" in f"{fabric_network} {deploy_text}".lower() else "待根据链网环境补充"
+        if not chain_sdk:
+            chain_sdk = "Fabric Gateway" if "gateway" in backend_stack.lower() or "gateway" in backend_text.lower() else "待补充"
+        if not frontend_framework:
+            frontend_framework = "Vue 3"
+    frontend_stack = frontend_stack_real or frontend_framework
+    if frontend_ui and frontend_ui not in frontend_stack:
         frontend_stack = f"{frontend_framework} + {frontend_ui}"
-    elif "Vue 3 + TypeScript + Pinia + Vue Router + Axios + Ant Design Vue" in frontend_text:
+    elif domain_key != "health_record" and "Vue 3 + TypeScript + Pinia + Vue Router + Axios + Ant Design Vue" in frontend_text:
         frontend_stack = "Vue 3 + Ant Design Vue"
 
     server_hardware_rows = [
@@ -2420,28 +2578,52 @@ def _build_test_assets(
         ["测试工具", test_tool_desc],
     ]
 
-    env_rows = [
-        [
-            "服务端与链下数据",
-            "Gin + GORM + MySQL；后端默认端口 8050；数据库为本地 teatrace。",
-            _join_source_paths(backend_report_path, start_doc_path, overall_doc_path),
-        ],
-        [
-            "客户端与交互入口",
-            "Vue 3 + Ant Design Vue；前端默认端口 5180；支持 /admin 与 /trace 两类入口。",
-            _join_source_paths(frontend_test_path, start_doc_path, overall_doc_path),
-        ],
-        [
-            "区块链与链码环境",
-            "Hyperledger Fabric 2.4.9；链码名 theatrace；依赖 ../test-network 完成部署与 InitLedger。",
-            _join_source_paths(deploy_doc_path, overall_doc_path),
-        ],
-        [
-            "测试执行方式",
-            "手动全流程文档 + full_flow_test.py + Backend TEST_REPORT + 页面截图取证。",
-            _join_source_paths(manual_test_path, frontend_test_path, backend_report_path),
-        ],
-    ]
+    if domain_key == "health_record":
+        env_rows = [
+            [
+                "服务端与链下数据",
+                f"{backend_framework} + {database_label}；后端接口基址 {backend_url or '待根据当前测试环境补充'}。",
+                _join_source_paths(frontend_test_path, overall_doc_path),
+            ],
+            [
+                "客户端与交互入口",
+                f"{frontend_stack}；前端入口 {frontend_url or '待根据当前测试环境补充'}。",
+                _join_source_paths(frontend_test_path, overall_doc_path),
+            ],
+            [
+                "区块链与签名接入",
+                f"{chain_access_desc or chain_platform}；链交互组件 {chain_sdk}。",
+                _join_source_paths(frontend_test_path, deploy_doc_path, overall_doc_path),
+            ],
+            [
+                "测试执行方式",
+                f"2026-04-09 真实参数前端全流程手动测试文档 + 页面截图取证{f'（{screenshot_dir}）' if screenshot_dir else ''}。",
+                _join_source_paths(frontend_test_path, manual_test_path),
+            ],
+        ]
+    else:
+        env_rows = [
+            [
+                "服务端与链下数据",
+                "Gin + GORM + MySQL；后端默认端口 8050；数据库为本地 teatrace。",
+                _join_source_paths(backend_report_path, start_doc_path, overall_doc_path),
+            ],
+            [
+                "客户端与交互入口",
+                "Vue 3 + Ant Design Vue；前端默认端口 5180；支持 /admin 与 /trace 两类入口。",
+                _join_source_paths(frontend_test_path, start_doc_path, overall_doc_path),
+            ],
+            [
+                "区块链与链码环境",
+                "Hyperledger Fabric 2.4.9；链码名 theatrace；依赖 ../test-network 完成部署与 InitLedger。",
+                _join_source_paths(deploy_doc_path, overall_doc_path),
+            ],
+            [
+                "测试执行方式",
+                "手动全流程文档 + full_flow_test.py + Backend TEST_REPORT + 页面截图取证。",
+                _join_source_paths(manual_test_path, frontend_test_path, backend_report_path),
+            ],
+        ]
 
     source_candidates: list[dict[str, str]] = []
     for path, text in doc_texts:
@@ -2467,7 +2649,6 @@ def _build_test_assets(
             }
         )
 
-    domain_key = _detect_domain_key(manifest_title, [], [], flow_items)
     case_rows: list[list[str]] = []
     for spec in _test_module_case_specs(domain_key):
         match = _pick_test_candidate(source_candidates, spec["keywords"])
@@ -2490,58 +2671,86 @@ def _build_test_assets(
             if any(keyword.lower() in lowered for keyword in keywords):
                 return line
         return ""
-
-    result_rows = [
-        [
-            "核心业务链路",
-            "通过" if pick_result_line(["full batch lifecycle", "batch", "sale", "inspection"]) else "待补",
-            pick_result_line(["full batch lifecycle", "batch", "sale", "inspection"]) or "待根据测试报告补充。",
-        ],
-        [
-            "溯源防伪验证",
-            "通过" if pick_result_line(["anti_fake_flag", "public queries", "trace code"]) else "待补",
-            pick_result_line(["anti_fake_flag", "public queries", "trace code"]) or "待根据测试报告补充。",
-        ],
-        [
-            "监管与交易重试",
-            "通过" if pick_result_line(["retry", "warning", "recall"]) else "待补",
-            pick_result_line(["retry", "warning", "recall"]) or "待根据测试报告补充。",
-        ],
-        [
-            "权限与界面边界",
-            "通过" if pick_result_line(["dealer login", "admin login", "unauthorized", "jwt"]) else "待补",
-            pick_result_line(["dealer login", "admin login", "unauthorized", "jwt"]) or "待根据测试报告补充。",
-        ],
-    ]
-
-    domain_key = _detect_domain_key(manifest_title, [], [], flow_items)
-
     if domain_key == "traceability":
-        identity_test_rows = [
-            ["1", "管理员正确登录并访问受保护接口", "登录成功；受保护接口返回正常结果", "登录成功；相关接口返回 200" if pick_result_line(["admin login"]) else "待补"],
-            ["2", "输入错误密码或未携带 Token 访问接口", "登录失败或返回 401", "错误登录被拦截；未授权访问返回 401" if pick_result_line(["failed login", "unauthorized", "jwt"]) else "待补"],
-            ["3", "审核业务机构并提交重复 mspId", "审核成功；重复 mspId 返回业务冲突", "审核流程正常完成；重复 mspId 返回 409" if pick_result_line(["duplicate", "mspid", "409"]) or "409" in backend_text else "待补"],
-            ["4", "非管理员角色登录后访问管理员页面", "无法进入管理员工作台", "业务角色未触发管理员工作台请求，越权访问被拦截" if pick_result_line(["dealer login", "dashboard request"]) else "待补"],
+        result_rows = [
+            [
+                "核心业务链路",
+                "通过" if pick_result_line(["full batch lifecycle", "batch", "sale", "inspection"]) else "待补",
+                pick_result_line(["full batch lifecycle", "batch", "sale", "inspection"]) or "待根据测试报告补充。",
+            ],
+            [
+                "溯源防伪验证",
+                "通过" if pick_result_line(["anti_fake_flag", "public queries", "trace code"]) else "待补",
+                pick_result_line(["anti_fake_flag", "public queries", "trace code"]) or "待根据测试报告补充。",
+            ],
+            [
+                "监管与交易重试",
+                "通过" if pick_result_line(["retry", "warning", "recall"]) else "待补",
+                pick_result_line(["retry", "warning", "recall"]) or "待根据测试报告补充。",
+            ],
+            [
+                "权限与界面边界",
+                "通过" if pick_result_line(["dealer login", "admin login", "unauthorized", "jwt"]) else "待补",
+                pick_result_line(["dealer login", "admin login", "unauthorized", "jwt"]) or "待根据测试报告补充。",
+            ],
         ]
-        batch_test_rows = [
-            ["1", "创建茶叶品类和茶园主档", "主档保存成功并可在页面查询", "创建成功；页面可正常回显"],
-            ["2", "创建茶叶批次", "批次保存成功；自动生成唯一溯源码并完成链上登记", "批次创建成功；生成有效溯源码；链上交易写入成功" if pick_result_line(["batch", "trace code"]) else "待补"],
-            ["3", "查询批次详情与链上历史", "返回批次主档和链上历史记录", "页面可查看批次详情；链上历史可正常查询"],
-        ]
-        record_test_rows = [
-            ["1", "茶农提交农事记录", "农事记录保存成功并关联目标批次", "提交成功；页面和数据库均可查看记录"],
-            ["2", "加工厂与质检机构依次提交加工记录和质检记录", "阶段记录按顺序写入；质检结果正常回显", "加工与质检记录提交成功；批次状态按流程推进" if pick_result_line(["inspection", "process"]) else "待补"],
-            ["3", "物流商和经销商提交仓储、物流和销售记录", "后续阶段记录连续写入；批次全流程闭环形成", "仓储、物流和销售记录均成功保存并完成展示" if pick_result_line(["storage", "logistics", "sale"]) else "待补"],
-        ]
-        trace_test_rows = [
-            ["1", "生成并绑定溯源码", "批次获得有效溯源码，支持二维码展示", "溯源码生成成功；二维码可正常查看"],
-            ["2", "公开查询溯源码", "返回批次、阶段记录、质检结果和链上状态", "公开查询成功；页面可稳定展示完整溯源信息" if pick_result_line(["public query", "trace code"]) else "待补"],
-            ["3", "连续多次查询同一溯源码", "查询次数达到阈值后触发防伪异常标记", "阈值调整后立即生效；连续 3 次查询后异常标记被正确置位" if pick_result_line(["anomaly_threshold", "anti_fake_flag", "query_count"]) else "待补"],
-        ]
-        regulator_test_rows = [
-            ["1", "查询预警列表并执行召回分析", "返回目标批次预警信息与影响范围", "预警查询成功；召回分析返回结果正常" if pick_result_line(["warning", "recall"]) else "待补"],
-            ["2", "冻结并解冻异常批次", "批次状态按监管操作变化，并同步写入链上记录", "冻结、解冻均执行成功；状态回写正常" if pick_result_line(["freeze", "unfreeze"]) else "待补"],
-            ["3", "查询交易记录并对失败交易执行人工重试", "返回交易列表；重试后生成新的成功交易记录", "交易列表查询正常；人工重试成功" if pick_result_line(["retry", "tx total", "latest_tx_id"]) else "待补"],
+        module_test_assets = [
+            {
+                "kind": "identity-test-table",
+                "title": "用户与权限管理功能测试表",
+                "section": "6.2.1 用户与权限管理功能测试",
+                "note": "用户与权限管理测试表，优先依据后端测试报告和前端联调结果生成。",
+                "rows": [
+                    ["1", "管理员正确登录并访问受保护接口", "登录成功；受保护接口返回正常结果", "登录成功；相关接口返回 200" if pick_result_line(["admin login"]) else "待补"],
+                    ["2", "输入错误密码或未携带 Token 访问接口", "登录失败或返回 401", "错误登录被拦截；未授权访问返回 401" if pick_result_line(["failed login", "unauthorized", "jwt"]) else "待补"],
+                    ["3", "审核业务机构并提交重复 mspId", "审核成功；重复 mspId 返回业务冲突", "审核流程正常完成；重复 mspId 返回 409" if pick_result_line(["duplicate", "mspid", "409"]) or "409" in backend_text else "待补"],
+                    ["4", "非管理员角色登录后访问管理员页面", "无法进入管理员工作台", "业务角色未触发管理员工作台请求，越权访问被拦截" if pick_result_line(["dealer login", "dashboard request"]) else "待补"],
+                ],
+            },
+            {
+                "kind": "batch-test-table",
+                "title": "批次与主档管理功能测试表",
+                "section": "6.2.2 批次与主档管理功能测试",
+                "note": "批次与主档管理测试表，围绕品类、茶园、批次和链上历史生成。",
+                "rows": [
+                    ["1", "创建茶叶品类和茶园主档", "主档保存成功并可在页面查询", "创建成功；页面可正常回显"],
+                    ["2", "创建茶叶批次", "批次保存成功；自动生成唯一溯源码并完成链上登记", "批次创建成功；生成有效溯源码；链上交易写入成功" if pick_result_line(["batch", "trace code"]) else "待补"],
+                    ["3", "查询批次详情与链上历史", "返回批次主档和链上历史记录", "页面可查看批次详情；链上历史可正常查询"],
+                ],
+            },
+            {
+                "kind": "record-test-table",
+                "title": "生产流转记录管理功能测试表",
+                "section": "6.2.3 生产流转记录管理功能测试",
+                "note": "生产流转记录测试表，围绕农事、加工、质检、仓储、物流和销售等环节生成。",
+                "rows": [
+                    ["1", "茶农提交农事记录", "农事记录保存成功并关联目标批次", "提交成功；页面和数据库均可查看记录"],
+                    ["2", "加工厂与质检机构依次提交加工记录和质检记录", "阶段记录按顺序写入；质检结果正常回显", "加工与质检记录提交成功；批次状态按流程推进" if pick_result_line(["inspection", "process"]) else "待补"],
+                    ["3", "物流商和经销商提交仓储、物流和销售记录", "后续阶段记录连续写入；批次全流程闭环形成", "仓储、物流和销售记录均成功保存并完成展示" if pick_result_line(["storage", "logistics", "sale"]) else "待补"],
+                ],
+            },
+            {
+                "kind": "trace-test-table",
+                "title": "溯源码与追溯查询功能测试表",
+                "section": "6.2.4 溯源码与追溯查询功能测试",
+                "note": "溯源码与追溯查询测试表，围绕绑定、查询与防伪异常标记生成。",
+                "rows": [
+                    ["1", "生成并绑定溯源码", "批次获得有效溯源码，支持二维码展示", "溯源码生成成功；二维码可正常查看"],
+                    ["2", "公开查询溯源码", "返回批次、阶段记录、质检结果和链上状态", "公开查询成功；页面可稳定展示完整溯源信息" if pick_result_line(["public query", "trace code"]) else "待补"],
+                    ["3", "连续多次查询同一溯源码", "查询次数达到阈值后触发防伪异常标记", "阈值调整后立即生效；连续 3 次查询后异常标记被正确置位" if pick_result_line(["anomaly_threshold", "anti_fake_flag", "query_count"]) else "待补"],
+                ],
+            },
+            {
+                "kind": "regulator-test-table",
+                "title": "监管预警与审计分析功能测试表",
+                "section": "6.2.5 监管预警与审计分析功能测试",
+                "note": "监管预警与审计分析测试表，围绕预警、冻结解冻和交易重试生成。",
+                "rows": [
+                    ["1", "查询预警列表并执行召回分析", "返回目标批次预警信息与影响范围", "预警查询成功；召回分析返回结果正常" if pick_result_line(["warning", "recall"]) else "待补"],
+                    ["2", "冻结并解冻异常批次", "批次状态按监管操作变化，并同步写入链上记录", "冻结、解冻均执行成功；状态回写正常" if pick_result_line(["freeze", "unfreeze"]) else "待补"],
+                    ["3", "查询交易记录并对失败交易执行人工重试", "返回交易列表；重试后生成新的成功交易记录", "交易列表查询正常；人工重试成功" if pick_result_line(["retry", "tx total", "latest_tx_id"]) else "待补"],
+                ],
+            },
         ]
         core_flow_rows = [
             ["TC-01", "管理员", "登录并验证权限边界", "系统已初始化", "登录管理员账号并访问工作台", "进入工作台；摘要、预警和交易接口返回正常", "通过" if pick_result_line(["admin login"]) else "待补"],
@@ -2562,12 +2771,122 @@ def _build_test_assets(
             ["可追溯性", "链上交易与链下业务状态映射", "可查询交易记录，关键批次具备链上凭证", "验证通过" if pick_result_line(["tx total", "latest_tx_id", "blockchain status"]) else "待补"],
             ["可用性", "多角色页面、公开查询页和工作台访问", "页面可正常打开并完成关键操作", "验证通过" if pick_result_line(["browser regression", "admin login", "dealer login"]) else "待补"],
         ]
+    elif domain_key == "health_record":
+        health_text = f"{frontend_text}\n{manual_test_doc[1] if manual_test_doc else ''}\n{all_docs_text}".lower()
+
+        def has_health_evidence(*snippets: str) -> bool:
+            return all(snippet.lower() in health_text for snippet in snippets if snippet)
+
+        register_ok = has_health_evidence("02-register-page.png", "自动在浏览器端生成 rsa 密钥对")
+        doctor_login_ok = has_health_evidence("01-login-page.png", "03-doctor-profile.png", "医生登录后跳转 `#/doctor/records`")
+        patient_login_ok = has_health_evidence("01-login-page.png", "07-patient-profile.png", "患者登录后跳转 `#/patient/records`")
+        password_page_ok = has_health_evidence("04-change-password-page.png")
+        record_create_ok = has_health_evidence("06-doctor-record-create-success.png", "提交后生成档案 `35`")
+        record_confirm_ok = has_health_evidence("09-patient-confirm-dialog.png", "后端计算档案摘要并写入区块链")
+        record_list_ok = has_health_evidence("10-patient-record-list.png", "已确认")
+        grant_request_ok = has_health_evidence("12-doctor-authorization-list-pending.png", "授权记录 `19`")
+        grant_ok = has_health_evidence("15-patient-authorization-list-granted.png", "授权状态：`已授权`")
+        revoke_ok = has_health_evidence("18-patient-authorization-list-revoked.png", "授权状态：`已撤销`")
+        doctor_view_ok = has_health_evidence("17-doctor-record-view-granted.png", "医生查看已授权档案")
+        denied_ok = has_health_evidence("20-doctor-record-view-denied.png", "http 状态码：`403`", "当前医生未获得查看授权")
+        status_sync_ok = has_health_evidence("11-doctor-record-search.png", "19-doctor-authorization-list-revoked.png")
+        full_flow_ok = has_health_evidence("创建档案 -> 患者确认 -> 医生申请 -> 患者授权 -> 医生查看 -> 患者撤销 -> 医生受限")
+
+        result_rows = [
+            ["身份登录与密钥管理", "通过" if register_ok and doctor_login_ok and patient_login_ok else "待补", "注册页已记录自动生成 RSA 密钥对，医生/患者登录后分别进入对应工作台。"],
+            ["档案建档与确认上链", "通过" if record_create_ok and record_confirm_ok else "待补", "档案 35 已完成新建、患者确认和链同步，手动测试文档记录了创建时间与确认时间。"],
+            ["授权申请与撤销闭环", "通过" if grant_request_ok and grant_ok and revoke_ok else "待补", "授权 19 已经过待处理、已授权、已撤销三个状态，医生端与患者端列表均有截图留痕。"],
+            ["撤销后的访问控制", "通过" if doctor_view_ok and denied_ok else "待补", "授权有效时医生可本地解密查看档案；撤销后直接访问查看页返回 403。"],
+        ]
+        module_test_assets = [
+            {
+                "kind": "identity-test-table",
+                "title": "用户与身份管理功能测试表",
+                "section": "6.2.1 用户与身份管理功能测试",
+                "note": "健康档案系统的身份相关测试，依据真实前端手动测试文档与截图生成。",
+                "rows": [
+                    ["1", "访问注册页并自动生成密钥对", "公钥自动回填，私钥仅在本地展示并支持下载", "已记录注册页真实截图与“自动生成 RSA 密钥对”说明" if register_ok else "待补"],
+                    ["2", "医生账号登录并进入个人信息页", "成功跳转医生工作台，个人资料与公钥只读展示", "已记录登录页与医生个人信息页截图" if doctor_login_ok else "待补"],
+                    ["3", "患者账号登录并进入个人信息页", "成功跳转患者工作台，个人资料与公钥只读展示", "已记录登录页与患者个人信息页截图" if patient_login_ok else "待补"],
+                    ["4", "加载修改密码页面", "页面字段完整，可执行口令更新流程", "已记录修改密码页面截图" if password_page_ok else "待补"],
+                ],
+            },
+            {
+                "kind": "record-test-table",
+                "title": "健康档案管理功能测试表",
+                "section": "6.2.2 健康档案管理功能测试",
+                "note": "健康档案建档、确认与列表回显测试，依据真实截图和手动测试文档生成。",
+                "rows": [
+                    ["1", "医生新建档案并提交患者侧密文", "生成待确认档案，后端仅接收密文", "档案 35 已成功创建，页面记录为待确认" if record_create_ok else "待补"],
+                    ["2", "患者输入私钥核验并确认上链", "前端本地解密核验后确认上链，数据库状态更新为已确认", "文档记录档案 35 于 2026-04-09 14:00:12 完成确认并显示“已同步”" if record_confirm_ok else "待补"],
+                    ["3", "患者查看全部档案列表", "列表显示已确认档案与链同步状态", "已记录患者全部档案页截图，档案 35 状态为已确认" if record_list_ok else "待补"],
+                ],
+            },
+            {
+                "kind": "access-test-table",
+                "title": "访问授权管理功能测试表",
+                "section": "6.2.3 访问授权管理功能测试",
+                "note": "授权申请、通过授权与撤销授权测试，依据真实业务 ID、时间戳与截图生成。",
+                "rows": [
+                    ["1", "医生对已确认档案申请授权", "生成待处理授权记录，并在医生授权列表中可见", "授权 19 已生成并在医生端显示为待处理" if grant_request_ok else "待补"],
+                    ["2", "患者执行重加密并通过授权", "授权状态更新为已授权，医生端出现查看入口", "文档记录授权 19 于 2026-04-09 14:02:07 变为已授权" if grant_ok else "待补"],
+                    ["3", "患者撤销已授权记录", "授权状态更新为已撤销，医生端不可继续正常查看", "文档记录授权 19 于 2026-04-09 14:02:20 变为已撤销" if revoke_ok else "待补"],
+                ],
+            },
+            {
+                "kind": "audit-test-table",
+                "title": "查询与审计追溯功能测试表",
+                "section": "6.2.4 查询与审计追溯功能测试",
+                "note": "查询回显、授权后查看与撤销后限制校验测试，依据真实页面截图与接口结果生成。",
+                "rows": [
+                    ["1", "医生检索患者档案并查看授权状态", "可检索到目标档案，确认状态、链同步与授权状态展示一致", "已记录医生档案检索截图和授权记录状态变化" if status_sync_ok else "待补"],
+                    ["2", "医生在授权有效时查看档案明文", "输入医生私钥后可在浏览器本地解密查看病历内容", "已记录已授权查看截图与真实病历明文" if doctor_view_ok else "待补"],
+                    ["3", "撤销授权后直接访问查看页", "接口返回 403，前端不再展示档案内容", "文档明确记录 HTTP 403 与“当前医生未获得查看授权”" if denied_ok else "待补"],
+                ],
+            },
+        ]
+        core_flow_rows = [
+            ["TC-01", "医生/患者", "登录并进入对应工作台", "真实账号可用", "使用 13705490741 / 13605490742 登录系统", "医生进入 `#/doctor/records`，患者进入 `#/patient/records`", "通过" if doctor_login_ok and patient_login_ok else "待补"],
+            ["TC-02", "医生", "新建健康档案", "患者账号与公钥已存在", "输入患者 ID、病历描述和备注后提交", "生成待确认档案 35，提交内容为患者侧密文", "通过" if record_create_ok else "待补"],
+            ["TC-03", "患者", "核验档案并确认上链", "存在待确认档案 35", "输入私钥、本地解密核验后点击确认上链", "档案状态更新为已确认，链同步状态为已同步", "通过" if record_confirm_ok else "待补"],
+            ["TC-04", "医生/患者", "完成授权申请与通过授权", "档案 35 已确认", "医生申请授权，患者本地解密后重加密并通过授权", "授权 19 状态变为已授权，医生端出现查看入口", "通过" if grant_request_ok and grant_ok else "待补"],
+            ["TC-05", "医生", "在授权有效时查看明文档案", "授权 19 处于已授权状态", "输入医生私钥进入查看页", "浏览器本地解密成功并展示病历描述与备注", "通过" if doctor_view_ok else "待补"],
+            ["TC-06", "患者/医生", "撤销授权并校验访问限制", "医生已可查看档案 35", "患者撤销授权后医生再次访问查看页", "授权状态变为已撤销，直接访问查看页返回 403", "通过" if revoke_ok and denied_ok else "待补"],
+        ]
+        nonfunctional_rows = [
+            ["安全性", "注册后仅保存公钥、私钥仅本地展示与下载", "私钥不上传服务器，敏感解密操作在浏览器本地完成", "手动测试文档明确记录“系统仍保持只保存公钥”" if register_ok else "待补"],
+            ["安全性", "撤销授权后的访问限制", "撤销后医生无法继续获取医生侧密文或查看明文档案", "已记录 HTTP 403 与前端“未获取到档案内容”" if denied_ok else "待补"],
+            ["一致性", "医生端与患者端状态同步", "档案确认、授权通过、授权撤销状态在双方页面保持一致", "医生检索页、医生授权页、患者授权页均已留存截图" if status_sync_ok else "待补"],
+            ["可用性", "完整业务链路页面回放", "关键页面能够按流程依次打开并形成闭环留痕", "文档已提供 20 张真实截图覆盖完整业务闭环" if full_flow_ok else "待补"],
+        ]
     else:
-        identity_test_rows = [["1", "待补", "待补", "待补"]]
-        batch_test_rows = [["1", "待补", "待补", "待补"]]
-        record_test_rows = [["1", "待补", "待补", "待补"]]
-        trace_test_rows = [["1", "待补", "待补", "待补"]]
-        regulator_test_rows = [["1", "待补", "待补", "待补"]]
+        result_rows = [
+            ["核心业务链路", "待补", "待根据测试报告补充。"],
+            ["权限与界面边界", "待补", "待根据测试报告补充。"],
+        ]
+        module_test_assets = [
+            {
+                "kind": "identity-test-table",
+                "title": "用户与身份管理功能测试表",
+                "section": "6.2.1 用户与身份管理功能测试",
+                "note": "待根据测试文档补充。",
+                "rows": [["1", "待补", "待补", "待补"]],
+            },
+            {
+                "kind": "record-test-table",
+                "title": "核心业务管理功能测试表",
+                "section": "6.2.2 核心业务管理功能测试",
+                "note": "待根据测试文档补充。",
+                "rows": [["1", "待补", "待补", "待补"]],
+            },
+            {
+                "kind": "audit-test-table",
+                "title": "查询与审计功能测试表",
+                "section": "6.2.3 查询与审计功能测试",
+                "note": "待根据测试文档补充。",
+                "rows": [["1", "待补", "待补", "待补"]],
+            },
+        ]
         core_flow_rows = [["TC-01", "待补", "待补", "待补", "待补", "待补", "待补"]]
         nonfunctional_rows = [["待补", "待补", "待补", "待补"]]
 
@@ -2651,86 +2970,23 @@ def _build_test_assets(
             table_rows=env_rows,
         ),
     )
-    _add_asset(
-        assets,
-        _make_asset(
-            project_root,
-            "tables",
-            "identity-test-table",
-            "用户与权限管理功能测试表",
-            chapter_candidates=["06-系统测试.md"],
-            section_candidates=["6.2.1 用户与权限管理功能测试"],
-            evidence_level="derived",
-            source_path_override=_join_source_paths(backend_report_path, manual_test_path, frontend_test_path),
-            note="用户与权限管理测试表，优先依据后端测试报告和前端联调结果生成。",
-            table_headers=["序号", "操作", "预期结果", "测试结果"],
-            table_rows=identity_test_rows,
-        ),
-    )
-    _add_asset(
-        assets,
-        _make_asset(
-            project_root,
-            "tables",
-            "batch-test-table",
-            "批次与主档管理功能测试表",
-            chapter_candidates=["06-系统测试.md"],
-            section_candidates=["6.2.2 批次与主档管理功能测试"],
-            evidence_level="derived",
-            source_path_override=_join_source_paths(backend_report_path, manual_test_path, frontend_test_path),
-            note="批次与主档管理测试表，围绕品类、茶园、批次和链上历史生成。",
-            table_headers=["序号", "操作", "预期结果", "测试结果"],
-            table_rows=batch_test_rows,
-        ),
-    )
-    _add_asset(
-        assets,
-        _make_asset(
-            project_root,
-            "tables",
-            "record-test-table",
-            "生产流转记录管理功能测试表",
-            chapter_candidates=["06-系统测试.md"],
-            section_candidates=["6.2.3 生产流转记录管理功能测试"],
-            evidence_level="derived",
-            source_path_override=_join_source_paths(backend_report_path, manual_test_path, frontend_test_path),
-            note="生产流转记录测试表，围绕农事、加工、质检、仓储、物流和销售等环节生成。",
-            table_headers=["序号", "操作", "预期结果", "测试结果"],
-            table_rows=record_test_rows,
-        ),
-    )
-    _add_asset(
-        assets,
-        _make_asset(
-            project_root,
-            "tables",
-            "trace-test-table",
-            "溯源码与追溯查询功能测试表",
-            chapter_candidates=["06-系统测试.md"],
-            section_candidates=["6.2.4 溯源码与追溯查询功能测试"],
-            evidence_level="derived",
-            source_path_override=_join_source_paths(backend_report_path, manual_test_path, frontend_test_path),
-            note="溯源码与追溯查询测试表，围绕绑定、查询与防伪异常标记生成。",
-            table_headers=["序号", "操作", "预期结果", "测试结果"],
-            table_rows=trace_test_rows,
-        ),
-    )
-    _add_asset(
-        assets,
-        _make_asset(
-            project_root,
-            "tables",
-            "regulator-test-table",
-            "监管预警与审计分析功能测试表",
-            chapter_candidates=["06-系统测试.md"],
-            section_candidates=["6.2.5 监管预警与审计分析功能测试"],
-            evidence_level="derived",
-            source_path_override=_join_source_paths(backend_report_path, manual_test_path, frontend_test_path),
-            note="监管预警与审计分析测试表，围绕预警、冻结解冻和交易重试生成。",
-            table_headers=["序号", "操作", "预期结果", "测试结果"],
-            table_rows=regulator_test_rows,
-        ),
-    )
+    for module_test_asset in module_test_assets:
+        _add_asset(
+            assets,
+            _make_asset(
+                project_root,
+                "tables",
+                module_test_asset["kind"],
+                module_test_asset["title"],
+                chapter_candidates=["06-系统测试.md"],
+                section_candidates=[module_test_asset["section"]],
+                evidence_level="derived",
+                source_path_override=_join_source_paths(backend_report_path, manual_test_path, frontend_test_path),
+                note=module_test_asset["note"],
+                table_headers=["序号", "操作", "预期结果", "测试结果"],
+                table_rows=module_test_asset["rows"],
+            ),
+        )
     _add_asset(
         assets,
         _make_asset(
@@ -3169,7 +3425,13 @@ def run_extract(config_path: Path) -> dict[str, Any]:
     role_assets = _build_role_assets(project_root, roles, role_evidence)
     api_assets = _build_api_assets(project_root, api_items, backend_evidence, backend_api_doc)
     database_assets = _build_database_assets(project_root, database_file, tables, database_doc)
-    blockchain_assets = _build_blockchain_assets(project_root, blockchain_items, blockchain_evidence, chaincode_doc)
+    blockchain_assets = _build_blockchain_assets(
+        project_root,
+        blockchain_items,
+        blockchain_evidence,
+        chaincode_doc,
+        manifest.get("chain_platform", "fabric"),
+    )
     chapter4_design_assets = (
         _build_traceability_design_table_assets(
             project_root,

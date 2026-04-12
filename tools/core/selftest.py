@@ -260,6 +260,303 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
             stage["assertions"].append(assertion)
             _require(assertion["ok"], f"fixture generic er sidecar missing: {path}")
 
+        chapter4_path = fixture_workspace / "polished_v3" / "04-系统设计.md"
+        chapter5_path = fixture_workspace / "polished_v3" / "05-系统实现.md"
+        _require(chapter4_path.exists(), f"fixture chapter 4 missing: {chapter4_path}")
+        _require(chapter5_path.exists(), f"fixture chapter 5 missing: {chapter5_path}")
+
+        negative_check_cmd = [sys.executable, str(cli_path), "check-workspace", "--config", str(config_path)]
+        negative_check_result, negative_check_stdout, _ = _run_command(
+            negative_check_cmd,
+            "06-check-workspace-figure-blocking-negative",
+            logs_dir,
+        )
+        stage["commands"].append(negative_check_result)
+        blocking_text_present = "Blocking figure integration issues:" in negative_check_stdout
+        blocking_figure_present = "图4.2" in negative_check_stdout
+        for label, ok, actual in (
+            ("fixture_figure_blocking_negative_status", negative_check_result["returncode"] != 0, negative_check_result["returncode"]),
+            ("fixture_figure_blocking_negative_section", blocking_text_present, blocking_text_present),
+            ("fixture_figure_blocking_negative_figure_no", blocking_figure_present, blocking_figure_present),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture figure integration blocking regression did not trigger as expected")
+
+        chapter4_text = chapter4_path.read_text(encoding="utf-8")
+        chapter5_text = chapter5_path.read_text(encoding="utf-8")
+        chapter4_markers = ["<!-- figure:4.2 -->", "<!-- figure:4.3 -->", "<!-- figure:4.4 -->", "<!-- figure:4.5 -->"]
+        chapter5_markers = ["<!-- figure:5.1 -->"]
+        if not all(marker in chapter4_text for marker in chapter4_markers):
+            chapter4_appendix = "\n\n" + "\n".join(marker for marker in chapter4_markers if marker not in chapter4_text) + "\n"
+            chapter4_path.write_text(chapter4_text.rstrip() + chapter4_appendix, encoding="utf-8")
+        if not all(marker in chapter5_text for marker in chapter5_markers):
+            chapter5_appendix = "\n\n" + "\n".join(marker for marker in chapter5_markers if marker not in chapter5_text) + "\n"
+            chapter5_path.write_text(chapter5_text.rstrip() + chapter5_appendix, encoding="utf-8")
+
+        positive_check_cmd = [sys.executable, str(cli_path), "check-workspace", "--config", str(config_path)]
+        positive_check_result, positive_check_stdout, _ = _run_command(
+            positive_check_cmd,
+            "07-check-workspace-figure-blocking-positive",
+            logs_dir,
+        )
+        stage["commands"].append(positive_check_result)
+        for label, ok, actual in (
+            ("fixture_figure_blocking_positive_status", positive_check_result["returncode"] == 0, positive_check_result["returncode"]),
+            (
+                "fixture_figure_blocking_positive_none",
+                "Blocking figure integration issues:\n  - none" in positive_check_stdout,
+                "Blocking figure integration issues:\n  - none" in positive_check_stdout,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture figure integration blocking regression did not clear after marker insertion")
+
+        refreshed_after_positive = read_json(config_path)
+        figure5_cfg = (refreshed_after_positive.get("figure_map") or {}).get("5.1", {})
+        mapped_figure5_path = fixture_workspace / str(figure5_cfg.get("path") or "")
+        _require(mapped_figure5_path.exists(), f"fixture mapped chapter 5 figure missing: {mapped_figure5_path}")
+
+        stale_chapter5_image = fixture_workspace / "docs" / "images" / "stale-function-structure.png"
+        stale_chapter5_image.parent.mkdir(parents=True, exist_ok=True)
+        stale_chapter5_image.write_bytes(mapped_figure5_path.read_bytes())
+
+        chapter5_stale_text = chapter5_path.read_text(encoding="utf-8").replace("<!-- figure:5.1 -->", "")
+        stale_ref_line = "![图5.1 系统功能结构图](../docs/images/stale-function-structure.png)"
+        if "![图5.1 系统功能结构图]" in chapter5_stale_text:
+            chapter5_stale_text = re.sub(
+                r"!\[图5\.1 系统功能结构图\]\([^)]+\)",
+                stale_ref_line,
+                chapter5_stale_text,
+                count=1,
+            )
+        else:
+            chapter5_stale_text = chapter5_stale_text.replace(
+                "图5.1 系统功能结构图",
+                f"图5.1 系统功能结构图\n\n{stale_ref_line}",
+                1,
+            )
+        chapter5_path.write_text(chapter5_stale_text.rstrip() + "\n", encoding="utf-8")
+
+        stale_check_cmd = [sys.executable, str(cli_path), "check-workspace", "--config", str(config_path)]
+        stale_check_result, stale_check_stdout, _ = _run_command(
+            stale_check_cmd,
+            "08-check-workspace-figure-blocking-stale-markdown",
+            logs_dir,
+        )
+        stage["commands"].append(stale_check_result)
+        for label, ok, actual in (
+            ("fixture_figure_blocking_stale_markdown_status", stale_check_result["returncode"] != 0, stale_check_result["returncode"]),
+            ("fixture_figure_blocking_stale_markdown_figure_no", "图5.1" in stale_check_stdout, "图5.1" in stale_check_stdout),
+            (
+                "fixture_figure_blocking_stale_markdown_reason",
+                "instead of the mapped asset" in stale_check_stdout,
+                "instead of the mapped asset" in stale_check_stdout,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture stale markdown image regression did not trigger as expected")
+
+        chapter5_restored_text = re.sub(
+            r"!\[图5\.1 系统功能结构图\]\([^)]+\)",
+            "<!-- figure:5.1 -->",
+            chapter5_stale_text,
+            count=1,
+        )
+        chapter5_path.write_text(chapter5_restored_text.rstrip() + "\n", encoding="utf-8")
+
+        restored_check_cmd = [sys.executable, str(cli_path), "check-workspace", "--config", str(config_path)]
+        restored_check_result, restored_check_stdout, _ = _run_command(
+            restored_check_cmd,
+            "09-check-workspace-figure-blocking-stale-markdown-restored",
+            logs_dir,
+        )
+        stage["commands"].append(restored_check_result)
+        for label, ok, actual in (
+            ("fixture_figure_blocking_stale_markdown_restored_status", restored_check_result["returncode"] == 0, restored_check_result["returncode"]),
+            (
+                "fixture_figure_blocking_stale_markdown_restored_none",
+                "Blocking figure integration issues:\n  - none" in restored_check_stdout,
+                "Blocking figure integration issues:\n  - none" in restored_check_stdout,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture stale markdown image regression did not clear after restoring marker")
+
+        packet_json_path = fixture_workspace / "docs" / "writing" / "chapter_packets" / "05-系统实现.json"
+        packet_payload = read_json(packet_json_path)
+        expected_page_screenshot_paths = [
+            str(item.get("workspace_image_path") or "").strip()
+            for item in packet_payload.get("asset_to_section_map", [])
+            if item.get("asset_type") == "figures" and item.get("required") and str(item.get("workspace_image_path") or "").strip()
+        ]
+        unique_expected_page_screenshot_paths = []
+        for rel in expected_page_screenshot_paths:
+            if rel and rel not in unique_expected_page_screenshot_paths:
+                unique_expected_page_screenshot_paths.append(rel)
+        if len(unique_expected_page_screenshot_paths) >= 2:
+            expected_rel = unique_expected_page_screenshot_paths[0]
+            wrong_rel = unique_expected_page_screenshot_paths[1]
+            chapter5_page_text = chapter5_path.read_text(encoding="utf-8")
+            current_rel = ""
+            expected_resolved = str((fixture_workspace / expected_rel).resolve())
+            for match in re.finditer(r"!\[(?P<alt>[^\]]*)\]\((?P<path>[^)]+)\)", chapter5_page_text):
+                rel = str(match.group("path") or "").strip().split()[0] if str(match.group("path") or "").strip() else ""
+                if not rel:
+                    continue
+                if str((chapter5_path.parent / rel).resolve()) == expected_resolved:
+                    current_rel = rel
+                    break
+            _require(current_rel, f"fixture chapter 5 missing expected page screenshot ref for {expected_rel}")
+
+            wrong_markdown_rel = f"../{wrong_rel}"
+            chapter5_stale_page_text = chapter5_page_text.replace(current_rel, wrong_markdown_rel, 1)
+            chapter5_path.write_text(chapter5_stale_page_text, encoding="utf-8")
+
+            stale_page_check_cmd = [sys.executable, str(cli_path), "check-workspace", "--config", str(config_path)]
+            stale_page_check_result, stale_page_check_stdout, _ = _run_command(
+                stale_page_check_cmd,
+                "10-check-workspace-page-screenshot-blocking-negative",
+                logs_dir,
+            )
+            stage["commands"].append(stale_page_check_result)
+            for label, ok, actual in (
+                ("fixture_page_screenshot_blocking_negative_status", stale_page_check_result["returncode"] != 0, stale_page_check_result["returncode"]),
+                (
+                    "fixture_page_screenshot_blocking_negative_section",
+                    "Blocking chapter 5 page screenshot issues:" in stale_page_check_stdout,
+                    "Blocking chapter 5 page screenshot issues:" in stale_page_check_stdout,
+                ),
+                (
+                    "fixture_page_screenshot_blocking_negative_reason",
+                    "assigned to another section" in stale_page_check_stdout or "missing required page screenshot" in stale_page_check_stdout,
+                    stale_page_check_stdout,
+                ),
+            ):
+                assertion = {"label": label, "ok": ok, "actual": actual}
+                stage["assertions"].append(assertion)
+                _require(assertion["ok"], "fixture chapter 5 page screenshot regression did not trigger as expected")
+
+            chapter5_path.write_text(chapter5_page_text, encoding="utf-8")
+
+            restored_page_check_cmd = [sys.executable, str(cli_path), "check-workspace", "--config", str(config_path)]
+            restored_page_check_result, restored_page_check_stdout, _ = _run_command(
+                restored_page_check_cmd,
+                "11-check-workspace-page-screenshot-blocking-restored",
+                logs_dir,
+            )
+            stage["commands"].append(restored_page_check_result)
+            for label, ok, actual in (
+                ("fixture_page_screenshot_blocking_restored_status", restored_page_check_result["returncode"] == 0, restored_page_check_result["returncode"]),
+                (
+                    "fixture_page_screenshot_blocking_restored_none",
+                    "Blocking chapter 5 page screenshot issues:\n  - none" in restored_page_check_stdout,
+                    "Blocking chapter 5 page screenshot issues:\n  - none" in restored_page_check_stdout,
+                ),
+            ):
+                assertion = {"label": label, "ok": ok, "actual": actual}
+                stage["assertions"].append(assertion)
+                _require(assertion["ok"], "fixture chapter 5 page screenshot regression did not clear after restore")
+
+        fixture_ai_config = read_json(config_path)
+        fixture_ai_image_generation = dict(fixture_ai_config.get("image_generation") or {})
+        fixture_ai_image_generation["enabled"] = True
+        fixture_ai_image_generation["provider"] = "zetatechs-gemini"
+        fixture_ai_config["image_generation"] = fixture_ai_image_generation
+        fixture_ai_config["ai_figure_specs"] = {
+            "5.1": {
+                "caption": "图5.1 系统功能结构图",
+                "chapter": "05-系统实现.md",
+                "intent": "展示系统名称、一级功能模块及代表性子功能之间的树状结构关系，整体保持论文技术图风格。",
+                "diagram_type": "function_structure",
+                "style_notes": "参考图仅用于继承树状布局、模块分组与白底黑线风格；重新清理图内文字，不保留任何旧标题、边缘装饰或英文字样。",
+                "enabled": True,
+                "override_builtin": True,
+                "reference_images": [
+                    {
+                        "path": str(mapped_figure5_path.relative_to(fixture_workspace)),
+                        "role": "layout-reference",
+                        "note": "仅参考当前 5.1 的树状层级、模块分组和线框布局，不要求复刻原图像素。",
+                    }
+                ],
+            }
+        }
+        write_json(config_path, fixture_ai_config)
+
+        ai_prepare_cmd = [
+            sys.executable,
+            str(cli_path),
+            "prepare-ai-figures",
+            "--config",
+            str(config_path),
+            "--fig",
+            "5.1",
+            "--dry-run",
+        ]
+        ai_prepare_result, _, _ = _run_command(
+            ai_prepare_cmd,
+            "10-prepare-ai-figures-dry-run-reference-image",
+            logs_dir,
+        )
+        stage["commands"].append(ai_prepare_result)
+        _require(ai_prepare_result["returncode"] == 0, "fixture prepare-ai-figures --dry-run failed for reference-image workflow")
+
+        ai_summary_path = fixture_workspace / "word_output" / "ai_figure_prepare_summary.json"
+        ai_prompt_manifest_path = fixture_workspace / "docs" / "images" / "generated_ai" / "prompt_manifest.json"
+        for path in (ai_summary_path, ai_prompt_manifest_path):
+            assertion = {"label": f"fixture_ai_artifact:{path.name}", "ok": path.exists(), "path": str(path)}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], f"fixture AI figure artifact missing: {path}")
+
+        ai_summary = read_json(ai_summary_path)
+        ai_prepared = list(ai_summary.get("prepared_figures") or [])
+        ai_manifest = read_json(ai_prompt_manifest_path)
+        ai_manifest_entry = ((ai_manifest.get("figures") or {}).get("5.1") or {})
+        expected_reference_rel = str(mapped_figure5_path.relative_to(fixture_workspace))
+        for label, ok, actual in (
+            ("fixture_ai_prepare_dry_run_status", len(ai_prepared) == 1, len(ai_prepared)),
+            (
+                "fixture_ai_prepare_reference_path",
+                ((ai_manifest_entry.get("reference_images") or [{}])[0].get("path") == expected_reference_rel),
+                ((ai_manifest_entry.get("reference_images") or [{}])[0].get("path")),
+            ),
+            (
+                "fixture_ai_prepare_reference_note",
+                "树状层级" in str(((ai_manifest_entry.get("reference_images") or [{}])[0].get("note") or "")),
+                ((ai_manifest_entry.get("reference_images") or [{}])[0].get("note")),
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture AI reference-image prompt manifest regression failed")
+
+        ai_preflight_cmd = [sys.executable, str(cli_path), "release-preflight", "--config", str(config_path)]
+        ai_preflight_result, ai_preflight_stdout, _ = _run_command(
+            ai_preflight_cmd,
+            "11-release-preflight-ai-override-missing-image",
+            logs_dir,
+        )
+        stage["commands"].append(ai_preflight_result)
+        for label, ok, actual in (
+            ("fixture_ai_preflight_missing_status", ai_preflight_result["returncode"] != 0, ai_preflight_result["returncode"]),
+            (
+                "fixture_ai_preflight_missing_section",
+                "Blocking AI figure override issues:" in ai_preflight_stdout,
+                "Blocking AI figure override issues:" in ai_preflight_stdout,
+            ),
+            (
+                "fixture_ai_preflight_missing_figure_no",
+                "5.1" in ai_preflight_stdout,
+                "5.1" in ai_preflight_stdout,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture AI override blocking regression did not trigger as expected")
+
         brief_dir = fixture_workspace / "docs" / "writing" / "chapter_briefs"
         packet_dir = fixture_workspace / "docs" / "writing" / "chapter_packets"
         chapter_queue_path = fixture_workspace / "docs" / "writing" / "chapter_queue.json"
@@ -440,11 +737,12 @@ def _run_workspace_stage(config_path: Path, out_root: Path) -> dict[str, Any]:
 
         chapter5_path = ctx["workspace_root"] / ctx["config"].get("build", {}).get("input_dir", "polished_v3") / "05-系统实现.md"
         chapter5_text = chapter5_path.read_text(encoding="utf-8") if chapter5_path.exists() else ""
-        chapter5_image_refs: list[str] = []
-        for match in re.finditer(r"!\[[^\]]*\]\(([^)]+)\)", chapter5_text):
-            rel = str(match.group(1) or "").strip().split()[0] if str(match.group(1) or "").strip() else ""
+        chapter5_image_entries: list[dict[str, str]] = []
+        for match in re.finditer(r"!\[(?P<alt>[^\]]*)\]\((?P<path>[^)]+)\)", chapter5_text):
+            rel = str(match.group("path") or "").strip().split()[0] if str(match.group("path") or "").strip() else ""
             if rel:
-                chapter5_image_refs.append(rel)
+                chapter5_image_entries.append({"alt": str(match.group("alt") or "").strip(), "path": rel})
+        chapter5_image_refs = [entry["path"] for entry in chapter5_image_entries]
         chapter5_missing_images = [
             rel for rel in chapter5_image_refs if not (chapter5_path.parent / rel).resolve().exists()
         ]
@@ -458,24 +756,59 @@ def _run_workspace_stage(config_path: Path, out_root: Path) -> dict[str, Any]:
         chapter5_page_screenshot_refs = [rel for rel in chapter5_image_refs if "docs/images/chapter5/" in rel]
         project_profile_path = ctx["workspace_root"] / "docs" / "writing" / "project_profile.json"
         required_page_screenshots = 0
-        if project_profile_path.exists():
+        chapter5_packet_paths: list[str] = []
+        chapter5_resolved_image_map = {
+            str((chapter5_path.parent / rel).resolve()): rel
+            for rel in chapter5_image_refs
+        }
+        packet_json_path = ctx["workspace_root"] / "docs" / "writing" / "chapter_packets" / "05-系统实现.json"
+        if packet_json_path.exists():
+            packet_payload = read_json(packet_json_path)
+            for item in packet_payload.get("asset_to_section_map", []):
+                if item.get("asset_type") != "figures" or not item.get("required"):
+                    continue
+                workspace_image_path = str(item.get("workspace_image_path", "") or "").strip()
+                if not workspace_image_path:
+                    continue
+                chapter5_packet_paths.append(workspace_image_path)
+        if chapter5_packet_paths:
+            required_page_screenshots = len(chapter5_packet_paths)
+        elif project_profile_path.exists():
             project_profile = read_json(project_profile_path)
-            required_page_screenshots = sum(
-                int(asset.get("min_count", 1) or 1)
-                for asset in project_profile.get("chapter_profile", {}).get("05-系统实现.md", {}).get("required_assets", [])
-                if asset.get("asset_type") == "figures" and asset.get("kind") == "test-screenshot"
-            )
+            for asset in project_profile.get("chapter_profile", {}).get("05-系统实现.md", {}).get("required_assets", []):
+                if asset.get("asset_type") != "figures" or asset.get("kind") != "test-screenshot":
+                    continue
+                required_page_screenshots += int(asset.get("min_count", 1) or 1)
         if required_page_screenshots > 0:
+            if chapter5_packet_paths:
+                required_paths = sorted(set(chapter5_packet_paths))
+                chapter5_page_screenshot_refs = []
+                matched_required_paths: list[str] = []
+                for rel in required_paths:
+                    resolved = str((ctx["workspace_root"] / rel).resolve())
+                    matched = chapter5_resolved_image_map.get(resolved, "")
+                    if matched:
+                        chapter5_page_screenshot_refs.append(matched)
+                        matched_required_paths.append(rel)
+                missing_required_paths = [rel for rel in required_paths if rel not in matched_required_paths]
+                screenshots_ok = not missing_required_paths
+            else:
+                chapter5_page_screenshot_refs = [rel for rel in chapter5_image_refs if "docs/images/chapter5/" in rel]
+                missing_required_paths = []
+                screenshots_ok = len(chapter5_page_screenshot_refs) >= required_page_screenshots
             assertion = {
                 "label": "chapter5_page_screenshot_refs",
-                "ok": len(chapter5_page_screenshot_refs) >= required_page_screenshots,
+                "ok": screenshots_ok,
                 "actual": len(chapter5_page_screenshot_refs),
                 "expected_min": required_page_screenshots,
+                "matched_refs": chapter5_page_screenshot_refs,
+                "expected_refs": chapter5_packet_paths,
+                "missing_expected_refs": missing_required_paths,
             }
             stage["assertions"].append(assertion)
             _require(
                 assertion["ok"],
-                f"chapter 5 page screenshots missing: {len(chapter5_page_screenshot_refs)} < {required_page_screenshots}",
+                f"chapter 5 page screenshots missing or mismatched: expected={chapter5_packet_paths} missing={missing_required_paths}",
             )
         docx_xml = _inspect_docx_xml(docx_path)
         image_extents_cm = _extract_docx_image_extents_cm(docx_xml)

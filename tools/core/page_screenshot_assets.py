@@ -7,6 +7,25 @@ from typing import Any
 
 
 _CHAPTER5_SELECTION_GROUP_FILENAME_MAP = {
+    "health-identity-login": "ch5-2-1-login-page.png",
+    "health-identity-register": "ch5-2-1-register-page.png",
+    "health-identity-profile-doctor": "ch5-2-2-doctor-profile.png",
+    "health-identity-profile-patient": "ch5-2-2-patient-profile.png",
+    "health-identity-password": "ch5-2-3-password-page.png",
+    "health-record-create-form": "ch5-3-1-record-create-form.png",
+    "health-record-confirm-pending": "ch5-3-2-patient-pending-list.png",
+    "health-record-confirm-dialog": "ch5-3-2-patient-confirm-dialog.png",
+    "health-record-view-granted": "ch5-3-3-doctor-record-view-granted.png",
+    "health-access-grant-pending-doctor": "ch5-4-1-doctor-authorization-pending.png",
+    "health-access-grant-pending-patient": "ch5-4-1-patient-authorization-pending.png",
+    "health-access-grant-dialog": "ch5-4-1-patient-grant-dialog.png",
+    "health-access-grant-patient-granted": "ch5-4-1-patient-authorization-granted.png",
+    "health-access-revoked-patient": "ch5-4-1-patient-authorization-revoked.png",
+    "health-access-status-search": "ch5-4-2-doctor-record-search.png",
+    "health-access-status-revoked": "ch5-4-2-doctor-authorization-revoked.png",
+    "health-audit-doctor-authorization-granted": "ch5-5-1-doctor-authorization-granted.png",
+    "health-audit-patient-record-list": "ch5-5-2-patient-record-list.png",
+    "health-audit-access-denied": "ch5-5-2-doctor-record-view-denied.png",
     "identity-registration": "fig5-4-register-login.png",
     "identity-dashboard": "fig5-2-admin-dashboard.png",
     "identity-permission": "fig5-2-3-user-permission.png",
@@ -25,6 +44,16 @@ _CHAPTER5_SELECTION_GROUP_FILENAME_MAP = {
 }
 
 _CHAPTER5_SECTION_FILENAME_MAP = {
+    "5.2.1 注册与登录实现": "ch5-2-1-login-page.png",
+    "5.2.2 个人资料与权限控制实现": "ch5-2-2-doctor-profile.png",
+    "5.2.3 医生审核与账号管理实现": "ch5-2-3-password-page.png",
+    "5.3.1 档案登记与初诊录入实现": "ch5-3-1-record-create-form.png",
+    "5.3.2 患者确认与链上存证实现": "ch5-3-2-patient-confirm-dialog.png",
+    "5.3.3 档案展示与健康数据可视化实现": "ch5-3-3-doctor-record-view-granted.png",
+    "5.4.1 授权与撤销实现": "ch5-4-1-patient-grant-dialog.png",
+    "5.4.2 授权状态校验与反馈实现": "ch5-4-2-doctor-record-search.png",
+    "5.5.1 带权限查询实现": "ch5-5-1-doctor-authorization-granted.png",
+    "5.5.2 查询审计与链下同步实现": "ch5-5-2-patient-record-list.png",
     "5.2.1 注册登录与会话建立实现": "fig5-4-register-login.png",
     "5.3.3 批次状态维护与全流程入口实现": "fig5-5-batch-management.png",
     "5.4.1 生产环节记录录入实现": "fig5-6-process-records.png",
@@ -52,7 +81,7 @@ def _normalized_source_path(source_path: str) -> str:
 
 def _chapter5_source_file_info(asset: dict[str, Any]) -> tuple[str, str, str]:
     source_path = _normalized_source_path(str(asset.get("source_path", "") or ""))
-    if ".runtime/test-artifacts/" not in source_path:
+    if not source_path:
         return "", "", ""
     source = Path(source_path)
     stem = source.stem.lower()
