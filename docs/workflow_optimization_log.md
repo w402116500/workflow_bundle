@@ -4842,3 +4842,15 @@
   - Gemini requests now send the attached reference images as inline image parts instead of text-only prompts
   - validated the new path with `python3 -m py_compile tools/core/ai_image_generation.py`, `prepare-ai-figures --dry-run`, and `prepare-ai-figures --force`
   - regenerated `/home/ub/test/workspace_dir/docs/images/generated_ai/fig4-1-ai.png`; the formal workspace now uses the AI-rendered paper-style architecture figure for `图4.1`
+
+## 2026-04-12 19:40:00 +08:00
+
+### Step 216
+- Action: Established a traceable version-management scheme for the external companion docs directory `/home/ub/thesis_materials/docs`, including a standalone Git repository layout, ignore rules for Windows ADS artifacts, a local bare backup remote, and a companion-facing usage guide.
+- Purpose: The workflow has long required operators to update two `workflow_optimization_log.md` files, but only `workflow_bundle` itself had a normal remote-tracked Git history. The companion log directory could still drift as an unmanaged sidecar, making it hard to audit who changed companion notes, recover an earlier draft, or preserve a clean baseline outside the main bundle repo.
+- Result:
+  - `/home/ub/thesis_materials/docs` now has an independent Git history boundary instead of remaining an unmanaged folder
+  - added `COMPANION_VERSIONING.md` to document scope, commit/tag conventions, rollback commands, and the separation between companion docs and the formal bundle repo
+  - added ignore rules so `*:Zone.Identifier`, temp locks, and editor noise do not pollute companion history
+  - created a local bare backup remote at `/home/ub/thesis_materials/.repo_state_backups/companion-docs.git` and pushed the initialized baseline there
+  - this makes future companion log updates auditable and rollbackable without coupling the external docs directory to `workflow_bundle` itself
