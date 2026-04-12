@@ -41,7 +41,7 @@ MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)\n```", re.S)
 HEADING_L2_RE = re.compile(r"^##\s+5\.(?P<num>\d+)\s+(?P<title>.+?)\s*$")
 HEADING_L3_RE = re.compile(r"^###\s+5\.\d+\.\d+\s+(?P<title>.+?)\s*$")
 FUNCTION_STRUCTURE_RENDERER_VERSION = "v2-monochrome-module-tree"
-DBDIA_ER_RENDERER_VERSION = "v1-generic-dbdia-chen-vendor-vizjs"
+DBDIA_ER_RENDERER_VERSION = "v2-generic-dbdia-chen-vendor-vizjs-no-adopt-rerender"
 USE_CASE_RENDERER_VERSION = "v3-clustered-uml-use-case"
 ARCHITECTURE_RENDERER_VERSION = "v1-layered-domain-fallback-architecture"
 SVG_RENDER_WIDTH_PX = 1665
@@ -1536,7 +1536,7 @@ def _figure_spec_hash(spec: FigureSpec, config: dict[str, Any], manifest: dict[s
 def _can_adopt_existing_output(spec: FigureSpec, output_path: Path) -> bool:
     if not output_path.exists():
         return False
-    if spec.renderer in {"pillow", "use_case", "pillow-architecture"}:
+    if spec.renderer in {"pillow", "use_case", "pillow-architecture", "dbdia-er"}:
         return False
     if not spec.source_paths:
         return True

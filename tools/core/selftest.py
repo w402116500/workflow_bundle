@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 from core.build_final_thesis_docx import resolve_output_docx_path
 from core.project_common import load_workspace_context, read_json, write_json
 from core.runtime_state import ACTIVE_WORKSPACE_POINTER_PATH
@@ -247,6 +249,35 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
         }
         stage["assertions"].append(assertion)
         _require(assertion["ok"], f"fixture generic er output missing: {generated_er_path}")
+
+        stale_placeholder_size = (64, 64)
+        Image.new("RGB", stale_placeholder_size, (255, 255, 255)).save(generated_er_path)
+        stale_renderer_cfg = read_json(config_path)
+        stale_renderer_map = dict(stale_renderer_cfg.get("figure_map") or {})
+        stale_renderer_entry = dict(stale_renderer_map.get("4.2") or {})
+        stale_renderer_entry["spec_hash"] = "legacy-stale-er-output"
+        stale_renderer_map["4.2"] = stale_renderer_entry
+        stale_renderer_cfg["figure_map"] = stale_renderer_map
+        write_json(config_path, stale_renderer_cfg)
+
+        rerender_er_cmd = [sys.executable, str(cli_path), "prepare-figures", "--config", str(config_path)]
+        rerender_er_result, rerender_er_stdout, _ = _run_command(
+            rerender_er_cmd,
+            "05a-prepare-figures-er-rerender-negative-adopt",
+            logs_dir,
+        )
+        stage["commands"].append(rerender_er_result)
+        _require(rerender_er_result["returncode"] == 0, "fixture prepare-figures failed during dbdia-er rerender regression")
+
+        with Image.open(generated_er_path) as rerendered_image:
+            rerendered_size = rerendered_image.size
+        for label, ok, actual in (
+            ("fixture_generic_er_rerender_status", "4.2 [rendered]" in rerender_er_stdout, rerender_er_stdout),
+            ("fixture_generic_er_rerender_not_placeholder", rerendered_size != stale_placeholder_size, rerendered_size),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture dbdia-er stale output regression did not force rerender as expected")
 
         generated_src_dir = fixture_workspace / "docs" / "images" / "generated_src"
         stem = Path(_default_er_output_name("4.2")).stem

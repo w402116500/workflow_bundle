@@ -4787,3 +4787,26 @@
   - preserved the existing `dbdia-er` explicit E-R workflow and merged the new 3.1 / 4.1 logic without regressing remote `4.2` support
   - strengthened `workspace_checks.py` so required figures now block on both missing mapped assets and mapped asset paths that do not exist on disk
   - extended `selftest.py` with a regression that deletes a required mapped figure asset, asserts `check-workspace` fails with the new blocking reason, then restores the config and confirms recovery
+
+
+## 2026-04-12 16:44:14 +08:00
+
+### Step 212
+- Action: Patched `workflow_bundle/tools/core/figure_assets.py` and `workflow_bundle/tools/core/selftest.py` to fix a stale-output cache bug in the generic `dbdia-er` workflow, then replayed the health-record workspace to regenerate `图4.2 数据库E-R图` on the formal release path.
+- Purpose: Although the health-record workspace had already switched `4.2` to `er_figure_specs + dbdia-er`, the rendered PNG could still silently stay on an older non-traditional diagram because `prepare-figures` was allowed to adopt any pre-existing `fig4-2-er-diagram.png`. Once that stale file was adopted and its new `spec_hash` got written back into `figure_map`, later runs only reported `cached`, which made the workspace look healthy while still showing the wrong visual.
+- Result:
+  - bumped `DBDIA_ER_RENDERER_VERSION` so previously adopted stale `dbdia-er` outputs are forced to rerender on the next `prepare-figures` run
+  - added `dbdia-er` to the deterministic renderers that are forbidden from `adopt existing output`, aligning its cache policy with other workflow-owned figure generators
+  - extended `selftest.py` with a regression that overwrites a valid E-R PNG with a tiny placeholder, corrupts the stored `spec_hash`, reruns `prepare-figures`, and asserts that `4.2` is reported as `[rendered]` rather than `[adopted]`
+  - regenerated the formal workspace `图4.2` and prepared the release chain for revalidation with the corrected traditional E-R figure
+
+
+## 2026-04-12 16:50:17 +08:00
+
+### Step 213
+- Action: Patched `workflow_bundle/tools/cli.py` so the bundled `smoke-intake` sequence now runs `prepare-figures` before its final `check-workspace`.
+- Purpose: While validating the `dbdia-er` fix, full workflow selftest still failed in the bundled fixture because `smoke-intake` ended with `check-workspace` even though the stricter figure blocking contract now requires mapped figure assets to exist first. The smoke pipeline needed to prepare deterministic figures before asking preflight to validate them.
+- Result:
+  - `smoke-intake` now produces the built-in figure map before the terminal workspace check
+  - this clears the earlier ordering bug where figure blocking ran before any workflow-owned figures were generated
+  - bundled full selftest still has older fixture debt around stub chapter marker / contract coverage, but it no longer fails on the pre-generation ordering issue itself

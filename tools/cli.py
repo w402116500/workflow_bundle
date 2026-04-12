@@ -904,6 +904,7 @@ def main(argv: list[str] | None = None) -> int:
             ["prepare-writing", "--config", str(config_path)],
             ["set-active-workspace", "--config", str(config_path)],
             ["resume", "--config", str(config_path)],
+            ["prepare-figures", "--config", str(config_path)],
             ["check-workspace", "--config", str(config_path)],
         ]
         if args.skip_research_sidecar:
