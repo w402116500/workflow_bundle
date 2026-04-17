@@ -3,8 +3,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONFIG=""
+IS_WSL=0
 
-if [[ "$(uname -s)" != MINGW* && "$(uname -s)" != CYGWIN* && "$(uname -s)" != MSYS* ]]; then
+if grep -qi microsoft /proc/version 2>/dev/null || [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
+    IS_WSL=1
+fi
+
+if [[ $IS_WSL -eq 0 && "$(uname -s)" != MINGW* && "$(uname -s)" != CYGWIN* && "$(uname -s)" != MSYS* ]]; then
     bash "$ROOT/workflow/scripts/postprocess_release_linux.sh" "$@"
     exit $?
 fi

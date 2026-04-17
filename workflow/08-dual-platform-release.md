@@ -53,6 +53,7 @@ Windows 路径适合完成：
 推荐入口：
 
 - `bash workflow_bundle/workflow/scripts/postprocess_release.sh`
+- `powershell -File workflow_bundle/workflow/scripts/postprocess_release.ps1 <workspace.json>`
 - 或直接在 Windows 下调用 `python3 workflow_bundle/tools/cli.py postprocess --config <workspace.json>`
 
 其中：
@@ -61,6 +62,7 @@ Windows 路径适合完成：
   - 基础排版稿输入 DOCX
   - 终稿输出 DOCX
   - 终稿图页码日志输出
+- 在 WSL 下执行 `postprocess_release.sh <workspace.json>` 时，若本地缺少 `win32com`，CLI 会自动桥接到宿主 `powershell.exe` + Windows Python/Word 终排
 - Windows 终排成功后会在 `final/` 中写出：
   - `final_summary.json`
   - `final_runs/final_summary_<timestamp>.json`
@@ -76,6 +78,39 @@ Windows 路径适合完成：
 如果不想区分平台，可以统一使用：
 
 - `bash workflow_bundle/workflow/scripts/postprocess_release.sh`
+
+## 3.2 WSL 到宿主 Windows 的推荐做法
+
+如果当前论文工作区仍放在 WSL 的 Linux 路径下，可以继续这样运行；CLI 会把 `workspace.json`、基础排版稿和日志路径自动桥接给宿主 Windows。
+
+如果本轮目标是：
+
+- 验证宿主 Windows 的 Word 终排能力
+- 用宿主侧 Office / 文件管理器直接检查导出结果
+- 在 WSL 中先生成，再把结果交给 Windows 侧流程复核
+
+推荐额外准备一个 Windows 盘符映射目录，例如：
+
+- `/mnt/e/myproject/wurenji_work`
+
+建议：
+
+- bundle 和 workspace 真源仍可保留在 WSL 路径
+- 仅把用于宿主复核的 probe / 发布产物放到 `/mnt/<drive>/...`
+- 需要给 PowerShell 传路径时，统一先执行 `wslpath -w <path>`
+- PowerShell 单次命令涉及中文输出时，先设置 UTF-8 控制台编码，避免 `参考文献`、图题等中文字段乱码
+
+已验证样例：
+
+- WSL 路径：`/mnt/e/myproject/wurenji_work/win_release_probe`
+- Windows 路径：`E:\\myproject\\wurenji_work\\win_release_probe`
+
+该样例已成功完成 Word 终排，并验证：
+
+- `参考文献` 标题存在
+- `图5-1` 等连字符编号保留正确
+- 正文中的文献交叉引用仍保持上标格式
+- `figure_insert_log_final.csv` 成功回填
 
 ## 4. 对外说明
 

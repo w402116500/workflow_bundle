@@ -4,12 +4,23 @@ import argparse
 import re
 import sys
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 try:
     from core.project_common import load_workspace_context, read_text_safe
 except ImportError:  # pragma: no cover - fallback for direct script execution
     from project_common import load_workspace_context, read_text_safe
+WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+W = f"{{{WORD_NS}}}"
+W_VAL = f"{W}val"
+W_FLD_CHAR_TYPE = f"{W}fldCharType"
+REF_FIELD_RE = re.compile(r"(^| )REF (ref_\d+)($| )")
+
+
+def _read_document_xml(docx_path: Path) -> str:
+    with zipfile.ZipFile(docx_path) as z:
+        return z.read("word/document.xml").decode("utf-8", errors="replace")
 
 
 CODE_IMAGE_NAME_RE = re.compile(
@@ -161,8 +172,152 @@ def inspect_citation_links(docx_path: Path, config_path: Path | None = None) -> 
 
 def verify_citation_links(docx_path: Path, config_path: Path | None = None) -> int:
     result = inspect_citation_links(docx_path, config_path)
+def _run_has_superscript(run_el: ET.Element) -> bool:
+    rpr = run_el.find(f"{W}rPr")
+    if rpr is None:
+        return False
+    vert = rpr.find(f"{W}vertAlign")
+    return vert is not None and vert.get(W_VAL) == "superscript"
+
+
+def inspect_citation_superscripts(docx_path: Path) -> dict[str, object]:
+    docx_path = docx_path.resolve()
+    if not docx_path.exists():
+        return {
+            "docx_path": str(docx_path),
+            "ref_result_fields": 0,
+            "missing_result_count": 0,
+            "non_superscript_count": 0,
+            "non_superscript_fields": [],
+            "status": 2,
+            "error": f"not found: {docx_path}",
+        }
+
+    xml = _read_document_xml(docx_path)
+    root = ET.fromstring(xml)
+    fields: list[dict[str, object]] = []
+
+    for paragraph_index, paragraph_el in enumerate(root.iterfind(f".//{W}p")):
+        paragraph_text = "".join(node.text or "" for node in paragraph_el.iterfind(f".//{W}t"))
+        active_field: dict[str, object] | None = None
+        for run_el in paragraph_el.iterfind(f".//{W}r"):
+
+            fld_chars = run_el.findall(f"{W}fldChar")
+            fld_type = next((node.get(W_FLD_CHAR_TYPE) for node in fld_chars if node.get(W_FLD_CHAR_TYPE)), "")
+            if fld_type == "begin":
+                active_field = {
+                    "paragraph_index": paragraph_index,
+                    "paragraph_text": paragraph_text[:160],
+                    "code_parts": [],
+                    "ref_id": "",
+                    "capture_result": False,
+                    "result_runs": [],
+                }
+                continue
+
+            if active_field is None:
+                continue
+
+            instr_text_nodes = run_el.findall(f"{W}instrText")
+            if instr_text_nodes:
+                active_field["code_parts"].extend(node.text or "" for node in instr_text_nodes)
+
+            if fld_type == "separate":
+                code_text = " ".join("".join(str(part) for part in active_field["code_parts"]).split())
+                match = REF_FIELD_RE.search(code_text)
+                active_field["ref_id"] = match.group(2) if match else ""
+                active_field["capture_result"] = bool(match)
+                continue
+
+            if bool(active_field.get("capture_result")):
+                text_nodes = run_el.findall(f"{W}t")
+                if text_nodes:
+                    run_text = "".join(node.text or "" for node in text_nodes)
+                    if run_text:
+                        active_field["result_runs"].append(
+                            {
+                                "text": run_text,
+                                "superscript": _run_has_superscript(run_el),
+                            }
+                        )
+
+            if fld_type == "end":
+                if bool(active_field.get("capture_result")):
+                    result_runs = list(active_field.get("result_runs") or [])
+                    result_text = "".join(str(item.get("text") or "") for item in result_runs)
+                    text_runs = [item for item in result_runs if str(item.get("text") or "").strip()]
+                    missing_result = not text_runs
+                    non_sup_runs = [str(item.get("text") or "") for item in text_runs if item.get("superscript") is not True]
+                    fields.append(
+                        {
+                            "ref_id": str(active_field.get("ref_id") or ""),
+                            "paragraph_index": int(active_field.get("paragraph_index", -1) or -1),
+                            "paragraph_text": str(active_field.get("paragraph_text") or ""),
+                            "result_text": result_text,
+                            "missing_result": missing_result,
+                            "superscript_ok": (not missing_result) and not non_sup_runs,
+                            "non_superscript_runs": non_sup_runs,
+                        }
+                    )
+                active_field = None
+
+    missing_result_fields = [field for field in fields if bool(field.get("missing_result"))]
+    non_superscript_fields = [field for field in fields if not bool(field.get("superscript_ok"))]
+    return {
+        "docx_path": str(docx_path),
+        "ref_result_fields": len(fields),
+        "missing_result_count": len(missing_result_fields),
+        "non_superscript_count": len(non_superscript_fields),
+        "non_superscript_fields": non_superscript_fields[:20],
+        "status": 1 if missing_result_fields or non_superscript_fields else 0,
+        "error": "",
+    }
+
+
+def compare_citation_superscripts(base_docx_path: Path, final_docx_path: Path) -> dict[str, object]:
+    base = inspect_citation_superscripts(base_docx_path)
+    final = inspect_citation_superscripts(final_docx_path)
+    if base["status"] == 2 or final["status"] == 2:
+        return {
+            "base_docx_path": str(base_docx_path.resolve()),
+            "final_docx_path": str(final_docx_path.resolve()),
+            "ok": False,
+            "status": 2,
+            "error": "; ".join(
+                [msg for msg in (str(base.get("error") or ""), str(final.get("error") or "")) if msg]
+            ),
+        }
+
+    ok = (
+        int(base.get("ref_result_fields", -1)) == int(final.get("ref_result_fields", -2))
+        and int(base.get("missing_result_count", -1)) == 0
+        and int(final.get("missing_result_count", -1)) == 0
+        and int(base.get("non_superscript_count", -1)) == 0
+        and int(final.get("non_superscript_count", -1)) == 0
+    )
+    return {
+        "base_docx_path": str(base_docx_path.resolve()),
+        "final_docx_path": str(final_docx_path.resolve()),
+        "base_ref_result_fields": int(base.get("ref_result_fields", 0)),
+        "final_ref_result_fields": int(final.get("ref_result_fields", 0)),
+        "base_missing_result_count": int(base.get("missing_result_count", 0)),
+        "final_missing_result_count": int(final.get("missing_result_count", 0)),
+        "base_non_superscript_count": int(base.get("non_superscript_count", 0)),
+        "final_non_superscript_count": int(final.get("non_superscript_count", 0)),
+        "ok": ok,
+        "status": 0 if ok else 1,
+        "error": "",
+    }
+
+
+def verify_citation_links(docx_path: Path, config_path: Path | None = None) -> int:
+    result = inspect_citation_links(docx_path, config_path)
+    superscript_audit = inspect_citation_superscripts(docx_path)
     if result["status"] == 2:
         print(str(result["error"]), file=sys.stderr)
+        return 2
+    if superscript_audit["status"] == 2:
+        print(str(superscript_audit["error"]), file=sys.stderr)
         return 2
 
     print(f"docx: {result['docx_path']}")
@@ -176,6 +331,9 @@ def verify_citation_links(docx_path: Path, config_path: Path | None = None) -> i
     print(f"code/media single-spacing violations: {result['code_media_single_spacing_violations']}")
     print(f"expected figure captions: {result['expected_figure_captions']}")
     print(f"missing figure captions: {len(result['missing_figure_captions'])}")
+    print(f"citation ref result fields: {superscript_audit['ref_result_fields']}")
+    print(f"citation missing result count: {superscript_audit['missing_result_count']}")
+    print(f"citation non-superscript count: {superscript_audit['non_superscript_count']}")
     missing = list(result["missing"])
     if missing:
         print("missing (first 30):")
@@ -202,6 +360,16 @@ def verify_citation_links(docx_path: Path, config_path: Path | None = None) -> i
         print("missing figure captions in DOCX:", file=sys.stderr)
         for caption in list(result["missing_figure_captions"])[:20]:
             print(f"  - {caption}", file=sys.stderr)
+    if superscript_audit["missing_result_count"] or superscript_audit["non_superscript_count"]:
+        print("citation superscript issues (first 20):")
+        for field in list(superscript_audit["non_superscript_fields"])[:20]:
+            print(
+                "  - "
+                f"{field.get('ref_id', '')} "
+                f"paragraph={field.get('paragraph_index', -1)} "
+                f"result={field.get('result_text', '')!r} "
+                f"non_superscript_runs={field.get('non_superscript_runs', [])}"
+            )
         return 1
 
     return 0
@@ -210,12 +378,13 @@ def verify_citation_links(docx_path: Path, config_path: Path | None = None) -> i
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Verify that citation REF fields have matching bookmarks.")
     parser.add_argument("docx_path", type=Path, help="Path to the generated DOCX file.")
+    parser.add_argument("--config", type=Path, default=None, help="Optional workspace config for figure/caption verification.")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    return verify_citation_links(args.docx_path)
+    return verify_citation_links(args.docx_path, args.config)
 
 
 if __name__ == '__main__':

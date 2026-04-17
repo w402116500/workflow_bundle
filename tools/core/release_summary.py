@@ -7,7 +7,7 @@ from typing import Any
 from core.build_final_thesis_docx import resolve_output_docx_path
 from core.postprocess_paths import resolve_postprocess_paths
 from core.project_common import load_workspace_context, read_json, write_json
-from core.verify_citation_links import inspect_citation_links
+from core.verify_citation_links import compare_citation_superscripts, inspect_citation_links, inspect_citation_superscripts
 from core.workspace_checks import run_workspace_check
 
 
@@ -108,10 +108,11 @@ def run_write_build_summary(config_path: Path, docx_path: Path | None = None) ->
     figure_prepare_summary = _load_figure_prepare_summary(paths["figure_prepare_summary_json"])
 
     summary = _build_common_summary(ctx, resolved_docx_path, preflight, figure_prepare_summary)
+    summary["citation_superscript_audit"] = inspect_citation_superscripts(resolved_docx_path)
     summary["build"] = {
         "status": 0 if summary["docx"]["exists"] else 1,
         "artifact_type": "基础排版稿",
-        "verified": False,
+        "verified": summary["citation_superscript_audit"].get("status") == 0,
     }
 
     run_slug = _run_slug(summary["generated_at"])
@@ -133,10 +134,15 @@ def run_write_release_summary(config_path: Path, docx_path: Path | None = None) 
     resolved_docx_path = docx_path.resolve() if docx_path else resolve_output_docx_path(ctx["config_path"])
     preflight = run_workspace_check(ctx["config_path"])
     citation_check = inspect_citation_links(resolved_docx_path, ctx["config_path"])
+    citation_superscript_audit = inspect_citation_superscripts(resolved_docx_path)
     figure_prepare_summary = _load_figure_prepare_summary(paths["figure_prepare_summary_json"])
 
     summary = _build_common_summary(ctx, resolved_docx_path, preflight, figure_prepare_summary)
     summary["citation_verify"] = citation_check
+    summary["citation_superscript_audit"] = citation_superscript_audit
+    summary["release_verify"] = {
+        "verified": citation_check.get("status") == 0 and citation_superscript_audit.get("status") == 0,
+    }
 
     run_slug = _run_slug(summary["generated_at"])
     release_run_path = paths["release_runs_dir"] / f"release_summary_{run_slug}.json"
@@ -164,6 +170,9 @@ def run_write_finalization_summary(
     resolved_figure_log_path = figure_log_path.resolve() if figure_log_path else postprocess_paths["output_figure_log"]
     preflight = run_workspace_check(ctx["config_path"])
     figure_prepare_summary = _load_figure_prepare_summary(_summary_output_paths(ctx["config"], ctx["workspace_root"])["figure_prepare_summary_json"])
+    base_citation_superscript_audit = inspect_citation_superscripts(resolved_base_docx_path)
+    final_citation_superscript_audit = inspect_citation_superscripts(resolved_final_docx_path)
+    citation_superscript_compare = compare_citation_superscripts(resolved_base_docx_path, resolved_final_docx_path)
 
     summary = {
         "generated_at": _now_iso(),
@@ -172,6 +181,9 @@ def run_write_finalization_summary(
         "figure_prepare": figure_prepare_summary,
         "base_docx": _path_stat(resolved_base_docx_path),
         "final_docx": _path_stat(resolved_final_docx_path),
+        "base_citation_superscript_audit": base_citation_superscript_audit,
+        "final_citation_superscript_audit": final_citation_superscript_audit,
+        "citation_superscript_compare": citation_superscript_compare,
         "figure_log": {
             "input": _path_stat(postprocess_paths["input_figure_log"]),
             "output": _path_stat(resolved_figure_log_path),
@@ -180,7 +192,7 @@ def run_write_finalization_summary(
             "status": 0 if resolved_final_docx_path.exists() else 1,
             "artifact_type": "Windows终稿",
             "platform": "windows-word",
-            "verified": False,
+            "verified": citation_superscript_compare.get("ok") is True,
         },
     }
 
@@ -191,4 +203,6 @@ def run_write_finalization_summary(
     return {
         "final_summary_json": str(postprocess_paths["final_summary_json"]),
         "final_run_json": str(final_run_path),
+        "citation_superscript_compare_ok": "true" if citation_superscript_compare.get("ok") is True else "false",
+        "final_citation_non_superscript_count": str(final_citation_superscript_audit.get("non_superscript_count", 0)),
     }

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import locale
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +13,7 @@ from core.build_final_thesis_docx import main as build_main, resolve_output_docx
 from core.ai_image_generation import run_prepare_ai_figures
 from core.code_evidence import run_extract_code
 from core.extract import run_extract
-from core.figure_assets import run_prepare_figures
+from core.figure_assets import run_prepare_figures, run_prepare_uml_samples
 from core.intake import run_intake
 from core.postprocess_paths import resolve_postprocess_paths
 from core.release_summary import run_write_build_summary, run_write_finalization_summary, run_write_release_summary
@@ -231,6 +233,15 @@ def _print_prepare_ai_figures_result(result: dict[str, Any]) -> None:
         print(f"{item['figure_no']} [{item.get('status', 'prepared')}]: {item['path']}")
 
 
+def _print_prepare_uml_samples_result(result: dict[str, Any]) -> None:
+    print(f"config_path: {result['config_path']}")
+    print(f"diagram_dir: {result['diagram_dir']}")
+    print(f"summary_json: {result['summary_json']}")
+    print(f"generated_samples: {len(result['generated_samples'])}")
+    for item in result["generated_samples"]:
+        print(f"{item['figure_no']} [{item.get('status', 'rendered')}]: {item['path']}")
+
+
 def _run_release_build_flow(config_path: Path, output_name: str | None, command_name: str) -> dict[str, Any]:
     def _action() -> dict[str, Any]:
         figure_result = run_prepare_figures(config_path)
@@ -244,6 +255,101 @@ def _run_release_build_flow(config_path: Path, output_name: str | None, command_
         }
 
     return _run_with_workspace_lock(config_path, command_name, _action)
+
+
+def _is_wsl_runtime() -> bool:
+    if os.environ.get("WSL_DISTRO_NAME"):
+        return True
+    try:
+        return "microsoft" in Path("/proc/version").read_text(encoding="utf-8").lower()
+    except Exception:
+        return False
+
+
+def _convert_path_to_windows(path: Path | None) -> str:
+    if path is None:
+        return ""
+    resolved = str(path.resolve())
+    completed = subprocess.run(["wslpath", "-w", resolved], capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        raise RuntimeError(f"failed to convert path for Windows bridge: {resolved}: {completed.stderr.strip()}")
+    return completed.stdout.strip()
+
+
+def _decode_windows_bridge_stream(data: bytes) -> str:
+    if not data:
+        return ""
+    encodings: list[str] = []
+    preferred = locale.getpreferredencoding(False)
+    if preferred:
+        encodings.append(preferred)
+    encodings.extend(["utf-8", "utf-8-sig", "gbk", "cp936"])
+    seen: set[str] = set()
+    for encoding in encodings:
+        if encoding in seen:
+            continue
+        seen.add(encoding)
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _run_postprocess_via_windows_bridge(
+    config_path: Path | None,
+    input_docx: Path,
+    output_docx: Path,
+    figlog: str,
+    figlog_out: str,
+) -> int:
+    bridge_cfg: dict[str, Any] = {}
+    if config_path and config_path.exists():
+        raw_config = json.loads(config_path.read_text(encoding="utf-8"))
+        bridge_cfg = dict(raw_config.get("postprocess", {}).get("windows_bridge", {}) or {})
+
+    if bridge_cfg.get("enabled", True) is False:
+        print("windows bridge disabled by workspace config: postprocess.windows_bridge.enabled=false", file=sys.stderr)
+        return 1
+
+    powershell_exe = str(bridge_cfg.get("powershell_exe", "powershell.exe") or "powershell.exe")
+    script_path = Path(__file__).resolve().parent / "windows" / "postprocess_word_format.ps1"
+    script_win = _convert_path_to_windows(script_path)
+    input_win = _convert_path_to_windows(input_docx)
+    output_win = _convert_path_to_windows(output_docx)
+    config_win = _convert_path_to_windows(config_path) if config_path else ""
+    figlog_win = _convert_path_to_windows(Path(figlog)) if figlog else ""
+    figlog_out_win = _convert_path_to_windows(Path(figlog_out)) if figlog_out else ""
+
+    command = [
+        powershell_exe,
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        script_win,
+        "-InputDocx",
+        input_win,
+        "-OutputDocx",
+        output_win,
+    ]
+    if config_win:
+        command.extend(["-Config", config_win])
+    if figlog_win:
+        command.extend(["-Figlog", figlog_win])
+    if figlog_out_win:
+        command.extend(["-FiglogOut", figlog_out_win])
+
+    completed = subprocess.run(command, capture_output=True, text=False, check=False)
+    stdout_text = _decode_windows_bridge_stream(completed.stdout)
+    stderr_text = _decode_windows_bridge_stream(completed.stderr)
+    if stdout_text:
+        sys.stdout.write(stdout_text)
+    if stderr_text:
+        sys.stderr.write(stderr_text)
+    if completed.returncode != 0:
+        print("WSL -> Windows PowerShell postprocess failed.", file=sys.stderr)
+    return int(completed.returncode)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -300,6 +406,11 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare_ai_figures_parser.add_argument("--fig", action="append", dest="figures")
     prepare_ai_figures_parser.add_argument("--force", action="store_true")
     prepare_ai_figures_parser.add_argument("--dry-run", action="store_true")
+
+    prepare_uml_samples_parser = subparsers.add_parser("prepare-uml-samples", help="Generate local PlantUML sample diagrams for the current workspace.")
+    prepare_uml_samples_parser.add_argument("--config", type=Path)
+    prepare_uml_samples_parser.add_argument("--diagram", action="append", dest="diagrams", choices=["class", "sequence"])
+    prepare_uml_samples_parser.add_argument("--force", action="store_true")
 
     scaffold_parser = subparsers.add_parser("scaffold", help="Generate chapter skeletons and literature tasks from a workspace config.")
     scaffold_parser.add_argument("--config", type=Path)
@@ -605,6 +716,29 @@ def main(argv: list[str] | None = None) -> int:
         _print_prepare_ai_figures_result(result)
         return 0
 
+    if args.command == "prepare-uml-samples":
+        config_path = _resolve_config_arg(args.config)
+        result = _run_with_workspace_lock(
+            config_path,
+            "prepare-uml-samples",
+            lambda: (
+                lambda inner: (
+                    _record_workspace_state(
+                        config_path,
+                        "prepare-uml-samples",
+                        {
+                            "sample_count": len(inner["generated_samples"]),
+                            "force": args.force,
+                            "diagrams": args.diagrams or [],
+                        },
+                    ),
+                    inner,
+                )[1]
+            )(run_prepare_uml_samples(config_path, args.diagrams, force=args.force)),
+        )
+        _print_prepare_uml_samples_result(result)
+        return 0
+
     if args.command == "scaffold":
         config_path = _resolve_config_arg(args.config)
         result = _run_with_workspace_lock(
@@ -846,29 +980,46 @@ def main(argv: list[str] | None = None) -> int:
             print(output_docx)
             return 0
 
+        postprocess_main = None
+        local_import_error: ModuleNotFoundError | None = None
         try:
             from windows.postprocess_word_format import main as postprocess_main
         except ModuleNotFoundError as exc:
-            print(f"windows-only dependency unavailable: {exc}", file=sys.stderr)
-            return 1
+            local_import_error = exc
+            if not _is_wsl_runtime():
+                print(f"windows-only dependency unavailable: {exc}", file=sys.stderr)
+                return 1
         def _postprocess_action() -> tuple[int, dict[str, Any] | None]:
-            exit_code = int(
-                postprocess_main(
+            if postprocess_main is not None:
+                local_args = [
+                    str(input_docx),
+                    str(output_docx),
+                ]
+                if config_path:
+                    local_args.extend(["--config", str(config_path)])
+                local_args.extend(
                     [
-                        str(input_docx),
-                        str(output_docx),
                         "--figlog",
                         figlog,
                         "--figlog_out",
                         figlog_out,
                     ]
                 )
-                or 0
-            )
+                exit_code = int(
+                    postprocess_main(local_args)
+                    or 0
+                )
+            else:
+                if local_import_error is not None:
+                    print(f"windows-only dependency unavailable locally, falling back to Windows bridge: {local_import_error}", file=sys.stderr)
+                exit_code = _run_postprocess_via_windows_bridge(config_path, input_docx, output_docx, figlog, figlog_out)
             summary: dict[str, Any] | None = None
             if exit_code == 0 and config_path:
                 summary = run_write_finalization_summary(config_path, input_docx, output_docx, Path(figlog_out) if figlog_out else None)
                 _record_workspace_state(config_path, "postprocess", summary)
+                if str(summary.get("citation_superscript_compare_ok", "")).lower() != "true":
+                    print("Windows finalization citation superscript audit failed.", file=sys.stderr)
+                    exit_code = 1
             return exit_code, summary
 
         if config_path:
