@@ -110,3 +110,16 @@
   - `python3 tools/cli.py selftest`
   - `python3 tools/cli.py release-build --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --output-name selftest_release.docx`
   - `python3 tools/cli.py release-verify --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --output-name selftest_release.docx`
+
+## 2026-04-18 (v0.5.2 release)
+
+- Purpose: 以补丁版本正式发布通用 `dbdia-er` E-R fallback 稳定性修复，确保远端 `main`、`VERSION`、release note 和 semver tag 口径一致。
+- Changes:
+  - 将当前正式版本提升为 `0.5.2`，并更新 `CHANGELOG.md` 与 `workflow/11-versioning-and-release.md` 中的当前版本说明。
+  - 新增 `docs/releases/v0.5.2.md`，记录本次补丁版发布说明与 GitHub Release 页面文案。
+  - 更新 `docs/releases/README.md`，将 `v0.5.2` 纳入正式 release 归档清单。
+- Validation:
+  - `python3 tools/cli.py version`
+  - `bash workflow/scripts/check_bundle_sync.sh`
+  - `python3 tools/cli.py selftest`
+  - `git diff --check`

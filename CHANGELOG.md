@@ -1,7 +1,19 @@
 # Changelog
 
-本文件从 `0.5.0` 开始维护结构化版本记录，当前最新版本为 `0.5.1`。
+本文件从 `0.5.0` 开始维护结构化版本记录，当前最新版本为 `0.5.2`。
 更早的历史提交与中文 milestone tag 仍然存在于 Git 历史中，但未形成统一 changelog；从当前版本起，正式 release 以语义化版本号为准。
+
+## [0.5.2] - 2026-04-18
+
+### Fixed
+
+- 修复 `tools/core/figure_assets.py` 中 generic `dbdia-er` E-R fallback 的关系命名逻辑，避免在多外键/多关系场景下生成重复关系名并导致 `dbdia` 报 `can not be defined again`。
+
+### Changed
+
+- `tools/core/selftest.py` 新增多关系 generic E-R fallback 回归断言，覆盖通用 `dbdia-er` 渲染链的唯一性约束。
+- 当前 bundle 正式版本提升为 `0.5.2`。
+- 新增 `docs/releases/v0.5.2.md`，记录本次补丁版发布说明。
 
 ## [0.5.1] - 2026-04-18
 
@@ -36,6 +48,7 @@
 
 ## Historical Tags
 
+- `v0.5.1`
 - `v0.5.0`
 - `v0.4.0`
 - `v0.3.0`
