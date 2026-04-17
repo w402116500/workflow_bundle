@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from core.bundle_version import BUNDLE_VERSION_FILE, read_bundle_version
 from core.project_common import (
     WRITING_ORDER,
     load_workspace_context,
@@ -39,6 +40,7 @@ MANAGED_WORKFLOW_DOCS = [
     "07-current-project-execution-checklist.md",
     "08-dual-platform-release.md",
     "09-testing-and-regression.md",
+    "11-versioning-and-release.md",
     "CHAPTER_EXECUTION.md",
     "MIGRATION.md",
     "THESIS_WORKFLOW.md",
@@ -105,8 +107,10 @@ def _render_workspace_workflow_readme(ctx: dict[str, Any]) -> str:
         f"- workspace_root: `{ctx['workspace_root']}`",
         f"- workspace_config: `{config_path}`",
         f"- bundle_root: `{PRIMARY_WORKFLOW_ROOT}`",
+        f"- bundle_version: `{read_bundle_version()}`",
         "",
         "Cold-start commands:",
+        f"- `python3 {cli_path} version`",
         f"- `python3 {cli_path} resume --config {config_path}`",
         f"- `python3 {cli_path} sync-workflow-assets --config {config_path}`",
         f"- `python3 {cli_path} lock-status --config {config_path}`",
@@ -715,6 +719,8 @@ def _render_handoff_md(handoff: dict[str, Any]) -> str:
         f"- workspace_root: `{handoff['workspace']['workspace_root']}`",
         f"- chain_platform: `{handoff['workspace']['chain_platform']}`",
         f"- active_workspace_match: `{handoff['active_workspace']['matches_current']}`",
+        f"- bundle_version: `{handoff['bundle']['version']}`",
+        f"- bundle_version_file: `{handoff['bundle']['version_file']}`",
         f"- bundle_signature: `{handoff['bundle']['signature']}`",
         f"- recorded_bundle_signature: `{handoff['bundle']['recorded_signature'] or 'none'}`",
         f"- workflow_signature_status: `{handoff['bundle']['signature_status']}`",
@@ -832,6 +838,8 @@ def build_workspace_snapshot(
         },
         "bundle": {
             "root": str(PRIMARY_WORKFLOW_ROOT),
+            "version": read_bundle_version(),
+            "version_file": str(BUNDLE_VERSION_FILE),
             "signature": signature["current_signature"],
             "recorded_signature": signature["recorded_signature"],
             "signature_status": signature["status"],
@@ -951,6 +959,7 @@ def build_resume_lines(config_path: Path | None = None) -> tuple[list[str], dict
         f"workspace_root: {handoff['workspace']['workspace_root']}",
         f"phase: {handoff['phase']['name']}",
         f"phase_reason: {handoff['phase']['reason']}",
+        f"bundle_version: {handoff['bundle']['version']}",
         f"orchestrator_skill_path: {handoff['skills']['orchestrator_skill_path']}",
         f"resume_skill_path: {handoff['skills']['resume_skill_path']}",
         f"workflow_signature_status: {handoff['bundle']['signature_status']}",

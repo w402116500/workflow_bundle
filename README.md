@@ -15,7 +15,11 @@
 - `paper-reader/`
   - 论文 PDF 阅读技能根目录镜像，供 `tools/core/intake.py` 在 bundle 内直接复制
 - `docs/`
-  - 当前工作流状态审计与优化日志快照
+  - bundle 面向仓库使用者的变更记录与历史归档说明
+- `VERSION`
+  - 当前 bundle 的正式版本号单一真源
+- `CHANGELOG.md`
+  - 正式版本变更记录
 
 ## 先看什么
 
@@ -28,15 +32,16 @@
 4. `workflow/THESIS_WORKFLOW.md`
 5. `workflow/CHAPTER_EXECUTION.md`
 6. `workflow/references/command-map.md`
-7. `workflow/09-testing-and-regression.md`
-8. `docs/current_workflow_status_audit_2026-03-31.md`
-9. `docs/workflow_optimization_log.md`
+7. `workflow/11-versioning-and-release.md`
+8. `workflow/09-testing-and-regression.md`
+9. `docs/archive/README.md`（如需了解历史演进与归档策略）
 
 ## 正式入口
 
 推荐优先使用 bundle 内的脚本和 CLI，而不是重新去根目录手工拼命令：
 
 - `python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace.json>`
+- `python3 workflow_bundle/tools/cli.py version`
 - `python3 workflow_bundle/tools/cli.py resolve-active-workspace`
 - `python3 workflow_bundle/tools/cli.py refresh-handoff --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py resume --config <workspace.json>`
@@ -71,21 +76,24 @@
 - `python3 workflow_bundle/tools/cli.py release-build` 是官方 Linux 发布构建入口，会顺序执行 `release-preflight -> prepare-figures -> build -> write-build-summary`
 - `python3 workflow_bundle/tools/cli.py release-verify` 是官方 Linux 发布校验入口，会顺序执行 `release-preflight -> prepare-figures -> build -> verify -> write-release-summary`
 - `python3 workflow_bundle/tools/cli.py selftest` 是官方本地回归入口；默认执行 bundle 自带 fixture 冷启动回归，传入 `--workspace-config` 后会追加真实 workspace 的 Linux 发布回归
+- `python3 workflow_bundle/tools/cli.py version` 是官方版本查询入口；`VERSION` 是当前 bundle 版本单一真源
 - `python3 workflow_bundle/tools/cli.py sync-workflow-assets` 用于把 workspace 本地 `workflow/*.md` 与 `workflow/skills/*` 同步到当前 bundle 版本；当 `workflow_signature_status=drifted` 时应先执行它
 - `check_workspace.sh` 现在保留为兼容别名，内部直接转发到 `release_preflight.sh`
 - `build_release.sh` 与 `verify_release.sh` 现在也只是对应 `release-build` 与 `release-verify` 的 shell 转发层
 - `build_release_docx.sh` 仅保留为内部兼容 helper，用于输出构建后的 DOCX 路径，不再作为新对话的公开入口
 
-## 当前活动工作区
+## 活动工作区解析
 
-当前实际正在写作和验证的项目工作区仍在仓库外层目录，不在本 bundle 内复制正文：
+无参命令不会绑定某个仓库内置工作区，而是通过活动指针解析当前 workspace：
 
-- `workspaces/teatrace_thesis/workflow/configs/workspace.json`
+- `python3 workflow_bundle/tools/cli.py resolve-active-workspace`
+- `python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace.json>`
 
 需要注意：
 
 - 本 bundle 是流程运行时入口，不是正文真源。
 - 论文正文真源仍然是各 workspace 下的 `polished_v3/`。
+- `workflow/configs/current_workspace.json` 与 `workflow/configs/current_project_manifest.json` 只保留为官方示例实例，不作为活动工作区默认值。
 - `word_output/`、`final/`、`tools/unpacked_*` 都不是正文来源。
 
 ## 技能布局

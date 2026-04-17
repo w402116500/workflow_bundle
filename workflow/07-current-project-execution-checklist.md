@@ -1,6 +1,6 @@
 # Current Project Execution Checklist
 
-## 当前默认实例
+## 活动指针与示例配置
 
 - 当前活动工作区指针：`workflow_bundle/workflow/configs/active_workspace.json`
 - 示例工作区配置：`workflow/configs/current_workspace.json`（仅示例，不作为当前项目默认值）
@@ -10,9 +10,10 @@
 
 0. 冷启动接手
    - 如果是人工新开一个 AI 对话，优先复制 `workflow/06-ai-prompt-guide.md` 中对应模板
+   - 如本轮涉及 bundle 整理、发版或远端提交，先执行 `python3 workflow_bundle/tools/cli.py version`
    - `python3 workflow_bundle/tools/cli.py resume`
    - 如输出 `workflow_signature_status: drifted`：`python3 workflow_bundle/tools/cli.py sync-workflow-assets --config <workspace.json>`
-   - 如未设置当前项目：`python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace.json>`
+   - 如未设置当前活动工作区：`python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace.json>`
    - 如需检查并发状态：`python3 workflow_bundle/tools/cli.py lock-status --config <workspace.json>`
 1. 检查工作区
    - `python3 workflow_bundle/tools/cli.py release-preflight --config <workspace.json>`
@@ -38,10 +39,11 @@
    - `bash workflow_bundle/workflow/scripts/verify_release.sh`
    - shell wrapper 只是兼容入口，官方校验链以 `release-verify` 为准
 7. 若本轮修改的是 workflow 自身
+   - 先确认 `VERSION` 与 `CHANGELOG.md` 是否已同步到本次变更范围
    - `python3 workflow_bundle/tools/cli.py selftest`
    - 如需同时覆盖真实工作区：`python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`
 
-## 当前实例的重要事实
+## 工作区的重要事实
 
 - 正文真源：`polished_v3/`
 - 证据材料：`docs/`、`code/`

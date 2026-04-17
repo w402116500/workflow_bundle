@@ -17,6 +17,7 @@
 如果是由人工发起一个新的 AI 对话来执行本流程，建议先直接使用：
 
 - `workflow/06-ai-prompt-guide.md`
+- 发版或确认当前 bundle 批次时，再查看 `workflow/11-versioning-and-release.md`
 
 其中已经提供了可复制的接手、写章、发布、排障提示模板。
 
@@ -109,6 +110,7 @@ CLI：
 
 推荐入口：
 
+- `python3 workflow_bundle/tools/cli.py version`
 - `python3 workflow_bundle/tools/cli.py release-build --config <workspace.json>`
 - `bash workflow_bundle/workflow/scripts/build_release.sh`
 

@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from core.bundle_version import bundle_version_info
 from core.build_final_thesis_docx import resolve_output_docx_path
 from core.postprocess_paths import resolve_postprocess_paths
 from core.project_common import load_workspace_context, read_json, write_json
@@ -90,6 +91,7 @@ def _run_slug(generated_at: str) -> str:
 def _build_common_summary(ctx: dict[str, Any], docx_path: Path, preflight: dict[str, Any], figure_prepare_summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "generated_at": _now_iso(),
+        "bundle": bundle_version_info(),
         "workspace": _workspace_summary(ctx),
         "preflight": _preflight_summary(preflight),
         "figure_prepare": figure_prepare_summary,
@@ -176,6 +178,7 @@ def run_write_finalization_summary(
 
     summary = {
         "generated_at": _now_iso(),
+        "bundle": bundle_version_info(),
         "workspace": _workspace_summary(ctx),
         "preflight": _preflight_summary(preflight),
         "figure_prepare": figure_prepare_summary,

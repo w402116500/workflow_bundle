@@ -46,7 +46,11 @@
 10. 明确 workflow 回归约束。
    - 如果 AI 修改的是 `workflow_bundle/` 下的工具、技能、脚本或工作流文档，结束前应运行 `python3 workflow_bundle/tools/cli.py selftest`。
    - 如需同时覆盖真实 workspace 发布链，再运行 `python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`。
-11. 明确 AI 插图约束。
+11. 明确版本治理约束。
+   - 如果本轮涉及 workflow 发布、bundle 打包、远端仓库清理或正式提交流程，先执行 `python3 workflow_bundle/tools/cli.py version`。
+   - 需要发版时，以根目录 `VERSION` 为单一真源，并同步检查 `CHANGELOG.md` 是否已补齐本次变更。
+   - 预发布版本优先使用语义化版本的 RC 形式，例如 `0.5.0-rc1`，不要再用临时中文 tag 代替正式版本号。
+12. 明确 AI 插图约束。
    - 只有场景示意图、业务流程概念图、论文插画类资源才适合使用 `prepare-ai-figures`。
    - 若要替换 `prepare-figures` 的内置图号，必须在 `ai_figure_specs` 中为对应图号显式设置 `override_builtin=true`，并在发布前先运行一次 `prepare-ai-figures`。
    - 当前 workflow 默认走 `zetatechs-gemini` provider；若执行环境需要回退到 OpenAI Image 兼容链，应显式把 `image_generation.provider` 改为 `zetatechs` 或 `zetatechs-openai-image`。
@@ -72,6 +76,7 @@
 - 若某些 AI 图需要保留确定性 fallback，也应提前说明图号。
 - 是否只走 Linux 路径。
 - 是否允许 AI 修改 workflow 文档与工具代码，还是只准改 workspace 正文。
+- 如果涉及发版或远端提交，当前期望版本号是什么，以及是否已经更新 `VERSION` / `CHANGELOG.md`。
 
 ## 4. 推荐的提示模板
 
@@ -115,6 +120,7 @@ workspace_out: <绝对路径/workspace_dir>
 3. 如果文档或代码材料缺失，请在 missing_inputs 中明确列出，不要硬编。
 4. 先把工作区准备完整，再讨论正文写作。
 5. 如果 workflow 本身需要修改，把操作写入两个 workflow_optimization_log.md。
+6. 如果本轮同时要整理 workflow bundle 仓库，先执行 `python3 workflow_bundle/tools/cli.py version`，并在输出中说明当前 bundle 版本。
 完成后汇报生成的 workspace 路径、缺失项、下一步建议。
 ```
 
@@ -173,6 +179,7 @@ workspace_config: <绝对路径/workspace.json>
 3. 然后执行 release-preflight -> release-build -> release-verify。
 4. 汇报 build_summary.json、release_summary.json、最终 docx 路径和引用锚点结果。
 5. 如果没有跑 Windows Word 后处理，明确说明结果只是 Linux 交付版。
+6. 如果本轮涉及正式发版，补充汇报当前 `VERSION`、拟使用的 tag，以及 `CHANGELOG.md` 是否与之对齐。
 ```
 
 ### 4.6 排查 workflow 问题
@@ -191,6 +198,7 @@ problem: <用一句话描述问题>
 3. 先根据 handoff、chapter_queue、release summary 和相关 workflow 文档定位问题，不要直接重写正文。
 4. 如果需要修改 workflow 工具或 workflow 文档，把每一步操作写入 docs/workflow_optimization_log.md 和 workflow_bundle/docs/workflow_optimization_log.md。
 5. 修复后重新验证相关命令，并汇报结果。
+6. 如果修复影响 bundle 正式行为或发版链，顺带执行 `python3 workflow_bundle/tools/cli.py version`，确认版本信息输出正常。
 ```
 
 ### 4.7 运行 workflow 自测
@@ -208,6 +216,7 @@ workspace_config: <可选，绝对路径/workspace.json>
 3. 如果给了 workspace_config，再执行 python3 workflow_bundle/tools/cli.py selftest --workspace-config <绝对路径/workspace.json>。
 4. 汇报 selftest_summary.json 路径、fixture 阶段结果、workspace 阶段结果。
 5. 如果失败，明确是哪一步失败、对应日志文件在哪、下一条修复命令是什么。
+6. 如果本轮修改过版本治理相关文件，补充汇报 `python3 workflow_bundle/tools/cli.py version` 的结果。
 ```
 
 ### 4.8 准备 AI 场景插图

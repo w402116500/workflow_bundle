@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from core.build_final_thesis_docx import main as build_main, resolve_output_docx_path
 from core.ai_image_generation import run_prepare_ai_figures
+from core.bundle_version import bundle_version_info, bundle_version_line
 from core.code_evidence import run_extract_code
 from core.extract import run_extract
 from core.figure_assets import run_prepare_figures
@@ -345,7 +346,11 @@ def _run_postprocess_via_windows_bridge(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Unified thesis tools CLI.")
+    parser.add_argument("--version", action="version", version=bundle_version_line())
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    version_parser = subparsers.add_parser("version", help="Print bundle version metadata.")
+    version_parser.add_argument("--json", action="store_true")
 
     build_parser = subparsers.add_parser("build", help="Build thesis DOCX from a workspace config.")
     build_parser.add_argument("--config", type=Path)
@@ -500,6 +505,20 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "version":
+        info = bundle_version_info()
+        if args.json:
+            print(json.dumps(info, ensure_ascii=False, indent=2))
+            return 0
+        print(f"version: {info['version']}")
+        print(f"tag: {info['tag']}")
+        print(f"version_file: {info['version_file']}")
+        print(f"is_prerelease: {str(info['is_prerelease']).lower()}")
+        print(f"git_commit: {info['git_commit'] or 'unknown'}")
+        print(f"git_dirty: {str(info['git_dirty']).lower()}")
+        print(f"latest_semver_tag: {info['latest_semver_tag'] or 'none'}")
+        return 0
 
     if args.command == "build":
         config_path = _resolve_config_arg(args.config)

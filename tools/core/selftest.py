@@ -13,6 +13,7 @@ from typing import Any
 
 from PIL import Image
 
+from core.bundle_version import bundle_version_info
 from core.build_final_thesis_docx import resolve_output_docx_path
 from core.project_common import load_workspace_context, read_json, write_json
 from core.runtime_state import ACTIVE_WORKSPACE_POINTER_PATH
@@ -982,6 +983,7 @@ def run_selftest(workspace_config: Path | None = None, out_root: Path | None = N
 
     summary: dict[str, Any] = {
         "generated_at": _now_iso(),
+        "bundle": bundle_version_info(),
         "bundle_root": str(PRIMARY_WORKFLOW_ROOT),
         "out_root": str(created_out_root),
         "summary_json": str(created_out_root / "selftest_summary.json"),

@@ -9,8 +9,9 @@
   - 如需先准备 AI 插图：`python3 workflow_bundle/tools/cli.py prepare-ai-figures --config <workspace.json>`
   - 如需显式生成本地 `dbdia` E-R 图：先在 workspace config 中补 `er_figure_specs`，再执行 `python3 workflow_bundle/tools/cli.py prepare-figures --config <workspace.json>`
   - 进入发布链路：`python3 workflow_bundle/tools/cli.py release-preflight --config <workspace.json>` -> `python3 workflow_bundle/tools/cli.py release-build --config <workspace.json>` -> `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>`
-  - 回归当前 bundle：`python3 workflow_bundle/tools/cli.py selftest`
-  - 回归 bundle + 真实 workspace：`python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`
+- 回归当前 bundle：`python3 workflow_bundle/tools/cli.py selftest`
+- 回归 bundle + 真实 workspace：`python3 workflow_bundle/tools/cli.py selftest --workspace-config <workspace.json>`
+- 查询当前 bundle 版本：`python3 workflow_bundle/tools/cli.py version`
 - 设置当前活动工作区
   - `python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace.json>`
 - 解析当前活动工作区
@@ -52,6 +53,7 @@
 ## 官方工具 CLI
 
 - `python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace.json>`
+- `python3 workflow_bundle/tools/cli.py version`
 - `python3 workflow_bundle/tools/cli.py resolve-active-workspace`
 - `python3 workflow_bundle/tools/cli.py sync-workflow-assets --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py refresh-handoff --config <workspace.json>`
@@ -104,6 +106,7 @@
 
 ## 说明
 
+- `VERSION` 是正式版本单一真源；正式 release tag 建议统一使用 `vX.Y.Z` 或 `vX.Y.Z-<prerelease>`
 - `workflow_signature_status` 以 workspace 本地 `docs/workflow/workflow_assets_state.json` 为准，不再以 handoff 更新时间代替同步状态。
 - `refresh-handoff` 只刷新 handoff 快照，不会把 `workflow_signature_status: drifted` 自动改回 `current`。
 - `build_release.sh`、`verify_release.sh`、`check_workspace.sh`、`selftest.sh` 仍可继续使用，但它们现在都是 CLI 官方入口的兼容包装层。

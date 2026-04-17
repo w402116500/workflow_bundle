@@ -13,6 +13,7 @@
 - 从 `workflow_bundle/README.md` 开始了解工作流
 - 优先运行 `workflow_bundle/workflow/scripts/*.sh`
 - 直接调用工具时优先使用 `python3 workflow_bundle/tools/cli.py ...`
+- 版本号与发版状态优先使用 `python3 workflow_bundle/tools/cli.py version` 与 `VERSION`
 - 无参命令默认从 `workflow_bundle/workflow/configs/active_workspace.json` 解析当前活动工作区
 - `workflow/configs/current_workspace.json` 只保留为示例配置，不再作为当前项目默认值
 - 新项目接入使用 `intake -> extract-code -> extract -> scaffold`
@@ -38,6 +39,7 @@
 - `workflow_bundle/workflow/scripts/sync_root_compat.sh`
 - `python3 workflow_bundle/tools/cli.py lock-status --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py clear-lock --config <workspace.json> --force`
+- `python3 workflow_bundle/tools/cli.py version`
 - `python3 workflow_bundle/tools/cli.py resume --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py sync-workflow-assets --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py intake --project-root <path> --title <title> --out <workspace-dir>`
