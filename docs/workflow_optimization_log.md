@@ -61,3 +61,16 @@
 - Validation:
   - `git diff --check`
   - `python3 tools/cli.py selftest`
+
+## 2026-04-18 (v0.5.0 release)
+
+- Purpose: 将 `v0.5.0-rc1` 收口为 `workflow_bundle` 首个正式 semver 版本，并统一仓库中的正式版版本口径。
+- Changes:
+  - 将根目录 `VERSION`、`CHANGELOG.md` 与 `workflow/11-versioning-and-release.md` 的当前版本说明统一更新为 `0.5.0`。
+  - 新增 `docs/releases/v0.5.0.md`，归档正式版 release note，并在 `docs/releases/README.md` 中登记。
+  - 保留 `v0.5.0-rc1` 作为预发布历史说明与 tag，不覆盖、不移动。
+- Validation:
+  - `python3 tools/cli.py version`
+  - `bash workflow/scripts/check_bundle_sync.sh`
+  - `python3 tools/cli.py selftest`
+  - `git diff --check`
