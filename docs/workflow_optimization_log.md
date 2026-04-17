@@ -87,3 +87,12 @@
   - `bash workflow/scripts/check_bundle_sync.sh`
   - `python3 tools/cli.py selftest`
   - `git diff --check`
+
+## 2026-04-18 (v0.5.1 github release copy)
+
+- Purpose: 为 `v0.5.1` 补充可直接粘贴到 GitHub Release 页面的简版发布文案，避免每次手工从仓库 release note 再二次整理。
+- Changes:
+  - 在 `docs/releases/v0.5.1.md` 中新增 “GitHub Release 页面文案” 区块，提供可直接复制的 Markdown 内容。
+  - 保留原有仓库内 release note 结构，不替代详细版发布说明。
+- Validation:
+  - `git diff --check`
