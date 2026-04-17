@@ -1487,6 +1487,24 @@ def _infer_relationship_target(current_table: str, column_name: str, table_names
     return candidates[0][1]
 
 
+def _sanitize_dbdia_identifier(text: str, fallback: str = "关联") -> str:
+    raw = str(text or "").strip()
+    normalized = re.sub(r"\s+", "_", raw)
+    normalized = re.sub(r"[^\w]+", "_", normalized, flags=re.UNICODE)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    if not normalized:
+        normalized = fallback
+    first = normalized[0]
+    if not (first.isalpha() or first == "_"):
+        normalized = f"R_{normalized}"
+    return normalized
+
+
+def _generic_er_relationship_name(target_table: str, current_table: str) -> str:
+    pair_name = f"关联_{target_table}_{current_table}"
+    return _sanitize_dbdia_identifier(pair_name, fallback="关联")
+
+
 def _build_generic_er_dsl(table_details: list[dict[str, Any]], fallback_table_names: list[str]) -> str:
     entity_lines: list[str] = []
     table_names: list[str] = []
@@ -1528,7 +1546,8 @@ def _build_generic_er_dsl(table_details: list[dict[str, Any]], fallback_table_na
             if pair in relation_seen:
                 continue
             relation_seen.add(pair)
-            relation_lines.append(f"{target} --- 1 --- < 关联 > --- N --- {current_table}")
+            relation_name = _generic_er_relationship_name(target, current_table)
+            relation_lines.append(f"{target} --- 1 --- < {relation_name} > --- N --- {current_table}")
 
     return "\n".join([*entity_lines, *([""] if relation_lines else []), *relation_lines]).strip()
 

@@ -15,6 +15,7 @@ from PIL import Image
 
 from core.bundle_version import bundle_version_info
 from core.build_final_thesis_docx import resolve_output_docx_path
+from core.figure_assets import _build_generic_er_dsl
 from core.project_common import load_workspace_context, read_json, write_json
 from core.runtime_state import ACTIVE_WORKSPACE_POINTER_PATH
 
@@ -44,6 +45,45 @@ CHAPTER6_PACKET_EXPECTED = [
     "Section 6.2 must keep one dedicated function-test subsection per core module, and each subsection must contain its required table as an actual markdown table before the explanatory paragraph.",
 ]
 SELFTEST_ER_DSL = """实体甲(_实体甲编号_, 实体甲名称)\n实体乙(_实体乙编号_, 实体乙名称)\n\n实体甲 --- 1 --- < 关联 > --- N --- 实体乙\n"""
+SELFTEST_GENERIC_ER_TABLE_DETAILS = [
+    {
+        "table": "device",
+        "columns": [
+            {"name": "device_id", "is_primary": True},
+            {"name": "device_name", "is_primary": False},
+        ],
+    },
+    {
+        "table": "alert",
+        "columns": [
+            {"name": "alert_id", "is_primary": True},
+            {"name": "device_id", "is_primary": False},
+        ],
+    },
+    {
+        "table": "work_order",
+        "columns": [
+            {"name": "order_id", "is_primary": True},
+            {"name": "device_id", "is_primary": False},
+            {"name": "source_alert_id", "is_primary": False},
+        ],
+    },
+    {
+        "table": "part_replacement",
+        "columns": [
+            {"name": "record_id", "is_primary": True},
+            {"name": "order_id", "is_primary": False},
+            {"name": "device_id", "is_primary": False},
+        ],
+    },
+    {
+        "table": "monitor_record",
+        "columns": [
+            {"name": "record_id", "is_primary": True},
+            {"name": "device_id", "is_primary": False},
+        ],
+    },
+]
 
 
 class SelftestFailure(RuntimeError):
@@ -258,6 +298,20 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
         prepare_figures_result, _, _ = _run_command(prepare_figures_cmd, "05-prepare-figures", logs_dir)
         stage["commands"].append(prepare_figures_result)
         _require(prepare_figures_result["returncode"] == 0, "fixture prepare-figures failed for generic er selftest")
+
+        generic_er_dsl = _build_generic_er_dsl(SELFTEST_GENERIC_ER_TABLE_DETAILS, [])
+        generic_relation_names = re.findall(r"<\s*([^>]+)\s*>", generic_er_dsl)
+        for label, ok, actual in (
+            ("fixture_generic_er_multi_relation_present", len(generic_relation_names) >= 4, generic_relation_names),
+            (
+                "fixture_generic_er_multi_relation_unique",
+                len(generic_relation_names) == len(set(generic_relation_names)),
+                generic_relation_names,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture generic er fallback emitted duplicate relationship identifiers")
 
         refreshed_fixture_config = read_json(config_path)
         figure_cfg = (refreshed_fixture_config.get("figure_map") or {}).get("4.2", {})

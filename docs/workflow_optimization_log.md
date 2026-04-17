@@ -96,3 +96,17 @@
   - 保留原有仓库内 release note 结构，不替代详细版发布说明。
 - Validation:
   - `git diff --check`
+
+## 2026-04-18 (generic er fallback hardening)
+
+- Purpose: 修复通用 `dbdia-er` E-R fallback 在多外键场景下生成重复关系名而导致干净 `release-build` 失败的问题，并补齐对应回归覆盖。
+- Changes:
+  - 更新 `tools/core/figure_assets.py`，将通用 E-R fallback 的关系命名从固定 `关联` 改为基于 `target/current table` 的稳定唯一标识，避免 `dbdia` 在多关系模型中报 `can not be defined again`。
+  - 更新 `tools/core/selftest.py`，新增“多关系通用 E-R DSL 唯一性”断言，防止后续修改再次产出重复关系名。
+  - 运行 `bash workflow/scripts/sync_root_compat.sh`，同步根目录兼容镜像，确保 bundle 自测与 release-preflight 不会因为镜像漂移误报失败。
+- Validation:
+  - `python3 -m py_compile tools/core/figure_assets.py tools/core/selftest.py`
+  - `bash workflow/scripts/sync_root_compat.sh`
+  - `python3 tools/cli.py selftest`
+  - `python3 tools/cli.py release-build --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --output-name selftest_release.docx`
+  - `python3 tools/cli.py release-verify --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --output-name selftest_release.docx`
