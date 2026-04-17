@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 from core.chapter_profile import build_project_profile, render_project_profile_md
@@ -14,6 +15,8 @@ from core.project_common import (
     write_text,
     writing_output_paths,
 )
+
+FIGURE_NO_RE = re.compile(r"^图(?P<figure_no>\d+\.\d+)\s*")
 
 
 def _should_initialize_chapter(path: Path) -> bool:
@@ -33,11 +36,58 @@ def _build_summary_hint(section_names: list[str], material_pack: dict[str, Any])
     return hints
 
 
+def _build_assets_by_section(required_assets: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for asset in required_assets:
+        section = str(asset.get("section") or "").strip()
+        if not section:
+            continue
+        grouped.setdefault(section, []).append(asset)
+    return grouped
+
+
+def _render_asset_placeholders(section_title: str, assets_by_section: dict[str, list[dict[str, Any]]]) -> list[str]:
+    assets = assets_by_section.get(section_title, [])
+    if not assets:
+        return []
+
+    lines: list[str] = []
+    for asset in assets:
+        asset_type = str(asset.get("asset_type") or "").strip()
+        kind = str(asset.get("kind") or "").strip()
+        title = str(asset.get("title") or asset.get("marker") or "待补资产").strip()
+        if asset_type == "figures":
+            figure_match = FIGURE_NO_RE.match(title)
+            if figure_match:
+                lines.extend([title, "", f"<!-- figure:{figure_match.group('figure_no')} -->", ""])
+            elif kind == "test-screenshot":
+                lines.extend([f"（页面截图占位：{title}）", ""])
+            else:
+                lines.extend([f"（图片占位：{title}）", ""])
+            continue
+        if asset_type == "tables":
+            lines.extend(
+                [
+                    title,
+                    "",
+                    "| 待补 | 说明 |",
+                    "|---|---|",
+                    "| 待补 | 根据资产抽取结果补齐 |",
+                    "",
+                ]
+            )
+            continue
+        if asset_type == "appendix_items":
+            lines.extend([title, "", "（附录条目占位，待根据抽取结果补齐）", ""])
+    return lines
+
+
 def _render_section_tree(
     filename: str,
     sections: list[dict[str, Any]],
     default_material_sections: list[str],
     literature_plan_rel: str,
+    assets_by_section: dict[str, list[dict[str, Any]]],
     level: int = 2,
 ) -> list[str]:
     lines: list[str] = []
@@ -54,7 +104,17 @@ def _render_section_tree(
         if filename == "01-绪论.md" and "研究现状" in section["title"]:
             lines.append(f"- 待补：结合 `{literature_plan_rel}` 与 reference registry 补充研究现状。")
         lines.append("")
-        lines.extend(_render_section_tree(filename, section.get("children", []), default_material_sections, literature_plan_rel, level + 1))
+        lines.extend(_render_asset_placeholders(str(section["title"]), assets_by_section))
+        lines.extend(
+            _render_section_tree(
+                filename,
+                section.get("children", []),
+                default_material_sections,
+                literature_plan_rel,
+                assets_by_section,
+                level + 1,
+            )
+        )
     return lines
 
 
@@ -78,6 +138,7 @@ def _render_chapter(filename: str, chapter_info: dict[str, Any], material_pack: 
         f"> 材料映射：{', '.join(material_sections) if material_sections else 'none'}",
     ]
     required_assets = chapter_info.get("required_assets", [])
+    assets_by_section = _build_assets_by_section(required_assets)
     if required_assets:
         lines.append(f"> 必需资产：{', '.join(asset['title'] for asset in required_assets)}")
         lines.append(f"> 占位策略：{chapter_info.get('placeholder_policy', {}).get('mode', 'optional')}")
@@ -86,7 +147,16 @@ def _render_chapter(filename: str, chapter_info: dict[str, Any], material_pack: 
     lines.extend(["", "写作提示："])
     lines.extend([f"- {hint}" for hint in hints] or ["- 结合 material_pack.json 中对应 section 的 summary 与 evidence 补写正文。"])
     lines.append("")
-    lines.extend(_render_section_tree(filename, chapter_info.get("sections", []), material_sections, literature_plan_rel))
+    lines.extend(_render_asset_placeholders(title, assets_by_section))
+    lines.extend(
+        _render_section_tree(
+            filename,
+            chapter_info.get("sections", []),
+            material_sections,
+            literature_plan_rel,
+            assets_by_section,
+        )
+    )
     return "\n".join(lines) + "\n"
 
 

@@ -109,3 +109,5 @@
 - `build_release.sh`、`verify_release.sh`、`check_workspace.sh`、`selftest.sh` 仍可继续使用，但它们现在都是 CLI 官方入口的兼容包装层。
 - `figure_map` 是输出登记表；如需显式启用本地 E-R 图，使用 `er_figure_specs` 而不是手工长期编辑 `figure_map`
 - `dbdia-er` 依赖 bundle 内 vendored `dbdia + Graphviz WASM`，首次干净运行需要本机可用 `java/javac` 与 `node/npm`
+- `document_format` 是当前 workspace 的正式版式入口；如需学校模板式排版或文字代码块导出，应在 workspace config 中声明，而不是手工改 DOCX
+- `postprocess --config` 在 WSL 下会自动桥接宿主 Windows PowerShell / Word，并对正文引用上标做最终审计；如果桥接或审计失败，应先修 workflow 再重新发布

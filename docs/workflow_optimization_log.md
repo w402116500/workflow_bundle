@@ -4854,3 +4854,50 @@
   - added ignore rules so `*:Zone.Identifier`, temp locks, and editor noise do not pollute companion history
   - created a local bare backup remote at `/home/ub/thesis_materials/.repo_state_backups/companion-docs.git` and pushed the initialized baseline there
   - this makes future companion log updates auditable and rollbackable without coupling the external docs directory to `workflow_bundle` itself
+
+## 2026-04-17 16:10:00 +08:00
+
+### Step 5
+- Action: Formalized the WSL -> Windows publish path and fixed reference-title export at the workflow level.
+- Purpose: Avoid repeating one-off manual fixes when publishing Chinese thesis documents from WSL to host Word.
+- Result:
+  - Updated `tools/core/writing.py` so generated `REFERENCES.md` now always starts with `# 参考文献`.
+  - Updated `tools/core/build_final_thesis_docx.py` to insert a fallback `参考文献` Heading 1 when parsing `REFERENCES.md` that lacks a heading, while skipping duplicate insertion if the heading already exists.
+  - Verified `python3 tools/cli.py normalize-citations --config ../workspace/workflow/configs/workspace.json` regenerates `REFERENCES.md` with the proper title.
+  - Verified the current base/final DOCX contains `参考文献` as a real section heading.
+  - Updated `workflow/08-dual-platform-release.md`, `workflow/09-testing-and-regression.md`, `workflow/README.md`, and `workflow/references/command-map.md` to document the recommended `/mnt/<drive>/...` Windows-backed probe path, `wslpath -w` conversion, and UTF-8 PowerShell output requirement.
+  - Confirmed the host Word postprocess path works on `E:\\myproject\\wurenji_work\\win_release_probe`, producing a final DOCX and `figure_insert_log_final.csv` with correct Chinese output and `图5-1` style numbering.
+
+### Step 6
+- Action: Repaired Windows postprocess so citation cross-references remain superscript after Word field refresh.
+- Purpose: Fix a real regression where the Linux base DOCX kept citation references like `[1]` as superscript, but the Windows finalization pass downgraded the visible `REF ref_x` field result back to baseline text.
+- Result:
+  - Root cause confirmed in the final DOCX XML: after `doc.Fields.Update()`, the field boundary runs still had `w:vertAlign="superscript"`, but the displayed citation result run `[n]` lost its superscript formatting.
+  - Updated `tools/windows/postprocess_word_format.ps1` to rescan `REF ref_<number>` fields after field / TOC updates and reapply superscript, black color, and no underline to `field.Result`.
+  - Updated `tools/windows/postprocess_word_format.py` with the same post-update citation-field repair logic for native Windows Python parity.
+  - Re-ran `python3 tools/cli.py postprocess --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json`.
+  - Verified `/home/ub/xianyu/wurenji_work/workspace/final/thesis-workspace_windows_final.docx` now keeps citation runs like `[1]`, `[2]`, `[3]` as superscript in the final Windows artifact.
+  - Updated `workflow/08-dual-platform-release.md` and `workflow/09-testing-and-regression.md` so future Windows release regression checks explicitly cover citation superscript preservation.
+
+### Step 7
+- Action: Added configurable text-mode DOCX code block export and switched the active Wurenji workspace to text code blocks.
+- Purpose: Stop turning chapter 5 fenced code blocks into screenshot-like images in the final thesis when the workspace explicitly wants selectable text code instead.
+- Result:
+  - Added `document_format.code_blocks` to the workflow config contract, supporting at least:
+    - `render_mode = image | text`
+    - `text_style = plain-paper | mono-block`
+  - Updated `tools/core/build_final_thesis_docx.py` so fenced code blocks now branch by config:
+    - `image` keeps the legacy PNG rendering path
+    - `text` writes the code directly into DOCX paragraphs with preserved indentation, single spacing, left indent, and black text
+  - Added cleanup for stale `processed_images/codeblock_*` build artifacts so switching from image mode to text mode does not leave misleading leftovers in the output directory.
+  - Updated `tools/core/document_format.py`, `workflow/templates/workspace-config.template.json`, `workflow/configs/current_workspace.json`, and `workflow/10-document-format-profiles.md` to formalize the new config surface.
+  - Updated chapter-5-facing workflow guidance in `tools/core/writing.py`, `workflow/README.md`, `workflow/THESIS_WORKFLOW.md`, `workflow/CHAPTER_EXECUTION.md`, and `workflow/06-ai-prompt-guide.md` so code screenshots are treated as optional evidence while text code blocks can be the primary final-paper form.
+
+### Step 8
+- Action: Hardened workflow-level citation superscript verification for both Linux release and Windows finalization.
+- Purpose: Prevent future regressions where正文中的 `REF ref_<n>` 交叉引用在某个发布阶段失去上标，但流水线仍错误放行。
+- Result:
+  - Fixed `tools/core/verify_citation_links.py` so the DOCX XML parser now reads `w:fldCharType` correctly and walks nested run structures, allowing it to recognize real `begin / separate / end` field boundaries and audit visible citation result runs instead of silently reporting `0` fields.
+  - Extended release summaries so `build_summary.json`, `release_summary.json`, and `final_summary.json` now all expose citation superscript audit data; Windows finalization summary also compares the Linux base DOCX and Windows final DOCX field counts and superscript status.
+  - Updated `tools/cli.py` so WSL-to-Windows postprocess output is decoded with fallback encodings instead of crashing on non-UTF-8 PowerShell output, and made `postprocess` fail if the final citation superscript compare audit is not `ok=true`.
+  - Fixed `tools/windows/postprocess_word_format.py` and `tools/windows/postprocess_word_format.ps1` so the Windows postprocess path verifies `REF ref_<n>` result formatting after Word field refresh using robust boolean handling and valid PowerShell string interpolation.

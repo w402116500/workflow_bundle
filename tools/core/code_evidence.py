@@ -44,6 +44,17 @@ CODE_SCREENSHOT_MAX_CONTENT_WIDTH_PX = max(
     - (CODE_SCREENSHOT_IMAGE_PAD_PX * 2)
     - (CODE_SCREENSHOT_BORDER_PX * 2),
 )
+IGNORED_SOURCE_PARTS = {
+    "node_modules",
+    "vendor",
+    "dist",
+    "build",
+    "target",
+    ".git",
+    "__pycache__",
+}
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
@@ -57,6 +68,14 @@ def _abs_project_path(project_root: Path, raw_path: str | None) -> Path | None:
         return None
     path = Path(raw_path)
     return path if path.is_absolute() else (project_root / path).resolve()
+
+
+def _is_ignored_source_path(path: Path, root: Path) -> bool:
+    try:
+        rel = path.relative_to(root)
+    except Exception:
+        rel = path
+    return any(part in IGNORED_SOURCE_PARTS for part in rel.parts)
 
 
 def _code_screenshot_font_candidates() -> list[Path]:
@@ -213,6 +232,8 @@ def _list_backend_files(backend_dir: Path | None) -> list[Path]:
     for path in sorted(backend_dir.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in allowed_suffixes:
             continue
+        if _is_ignored_source_path(path, backend_dir):
+            continue
         if path.name.lower().endswith(("_test.go", "_test.java", ".spec.ts", ".spec.js", ".test.ts", ".test.js")):
             continue
         rel = "/".join(path.relative_to(backend_dir).parts).lower()
@@ -228,6 +249,8 @@ def _list_frontend_files(frontend_dir: Path | None) -> list[Path]:
     candidates: list[Path] = []
     for path in sorted(frontend_dir.rglob("*")):
         if not path.is_file() or path.suffix.lower() not in allowed_suffixes:
+            continue
+        if _is_ignored_source_path(path, frontend_dir):
             continue
         rel = "/".join(path.relative_to(frontend_dir).parts).lower()
         if any(token in rel for token in ["pages/", "views/", "router/", "stores/", "services/", "constants/"]):

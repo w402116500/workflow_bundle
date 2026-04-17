@@ -16,7 +16,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 from core.ai_image_generation import ai_override_blocking_entries, ai_override_map
 from core.page_screenshot_assets import stage_chapter5_test_screenshots
-from core.project_common import load_workspace_context, make_relative, material_output_paths, read_json, write_json, writing_output_paths
+from core.project_common import load_workspace_context, make_relative, material_output_paths, read_json, read_text_safe, write_json, writing_output_paths
 
 
 THIS_ROOT = Path(__file__).resolve().parents[2]
@@ -1355,6 +1355,212 @@ def _patch_dbdia_dot(dot_text: str) -> str:
     return patched
 
 
+def _resolve_project_member(project_root: Path, raw_path: str | None) -> Path | None:
+    candidate = str(raw_path or "").strip()
+    if not candidate:
+        return None
+    path = Path(candidate)
+    return path.resolve() if path.is_absolute() else (project_root / path).resolve()
+
+
+def _parse_sql_table_details(database_file: Path | None) -> list[dict[str, Any]]:
+    if database_file is None or not database_file.exists():
+        return []
+    text = read_text_safe(database_file)
+    pattern = re.compile(
+        r"CREATE TABLE(?: IF NOT EXISTS)?\s+`?([A-Za-z0-9_]+)`?\s*\((.*?)\)\s*(?:ENGINE|COMMENT|;)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    details: list[dict[str, Any]] = []
+    for table_name, body in pattern.findall(text):
+        primary_keys: set[str] = set()
+        for key_match in re.findall(r"PRIMARY KEY\s*\(([^)]*)\)", body, flags=re.IGNORECASE):
+            for name in re.findall(r"`([A-Za-z0-9_]+)`", key_match):
+                primary_keys.add(name)
+        columns: list[dict[str, Any]] = []
+        for raw_line in body.splitlines():
+            clean = raw_line.strip().rstrip(",")
+            upper = clean.upper()
+            if not clean or upper.startswith(("PRIMARY KEY", "KEY ", "UNIQUE KEY", "CONSTRAINT", "INDEX ", "UNIQUE INDEX", "FOREIGN KEY")):
+                continue
+            match = re.match(r"`?([A-Za-z0-9_]+)`?\s+([A-Za-z]+(?:\([^)]+\))?)\s*(.*)", clean)
+            if not match:
+                continue
+            column_name = str(match.group(1) or "").strip()
+            columns.append(
+                {
+                    "name": column_name,
+                    "is_primary": column_name in primary_keys,
+                }
+            )
+        if columns:
+            details.append({"table": table_name, "columns": columns})
+    return details
+
+
+def _material_pack_database_table_names(config: dict[str, Any], workspace_root: Path) -> list[str]:
+    material_pack_path = material_output_paths(config, workspace_root)["material_pack_json"]
+    if not material_pack_path.exists():
+        return []
+    material_pack = read_json(material_pack_path)
+    tables = (
+        material_pack.get("sections", {})
+        .get("database_design", {})
+        .get("assets", {})
+        .get("tables", [])
+    )
+    names: list[str] = []
+    for item in tables:
+        for row in item.get("table_rows", []):
+            if not row:
+                continue
+            table_name = str(row[0] or "").strip()
+            if table_name and table_name not in names:
+                names.append(table_name)
+    if names:
+        return names
+
+    figure_assets = (
+        material_pack.get("sections", {})
+        .get("database_design", {})
+        .get("assets", {})
+        .get("figures", [])
+    )
+    for item in figure_assets:
+        placeholder = str(item.get("placeholder_text") or "")
+        for table_name in re.findall(r"核心实体:\s*([A-Za-z0-9_]+)", placeholder):
+            if table_name not in names:
+                names.append(table_name)
+    return names
+
+
+def _table_aliases(table_name: str) -> list[str]:
+    normalized = str(table_name or "").strip().lower()
+    if not normalized:
+        return []
+    aliases: list[str] = [normalized]
+    parts = [part for part in normalized.split("_") if part]
+    if parts:
+        aliases.append(parts[-1])
+    if len(parts) >= 2:
+        aliases.append("_".join(parts[-2:]))
+    singularized: list[str] = []
+    for alias in aliases:
+        if alias.endswith("ies") and len(alias) > 3:
+            singularized.append(alias[:-3] + "y")
+        elif alias.endswith("s") and len(alias) > 1:
+            singularized.append(alias[:-1])
+    for alias in singularized:
+        if alias not in aliases:
+            aliases.append(alias)
+    deduped: list[str] = []
+    for alias in aliases:
+        if alias and alias not in deduped:
+            deduped.append(alias)
+    return deduped
+
+
+def _infer_relationship_target(current_table: str, column_name: str, table_names: list[str]) -> str | None:
+    column = str(column_name or "").strip().lower()
+    if not column.endswith("_id") or column == "id":
+        return None
+    stem = column[:-3]
+    candidates: list[tuple[int, str]] = []
+    for table_name in table_names:
+        if table_name == current_table:
+            continue
+        aliases = _table_aliases(table_name)
+        score = 0
+        if stem in aliases:
+            score = 5
+        elif any(alias.endswith(f"_{stem}") for alias in aliases):
+            score = 4
+        elif any(alias.startswith(f"{stem}_") for alias in aliases):
+            score = 3
+        elif any(stem in alias for alias in aliases):
+            score = 2
+        if score > 0:
+            candidates.append((score, table_name))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (-item[0], item[1]))
+    return candidates[0][1]
+
+
+def _build_generic_er_dsl(table_details: list[dict[str, Any]], fallback_table_names: list[str]) -> str:
+    entity_lines: list[str] = []
+    table_names: list[str] = []
+    seen_tables: set[str] = set()
+    for detail in table_details:
+        table_name = str(detail.get("table") or "").strip()
+        if not table_name or table_name in seen_tables:
+            continue
+        seen_tables.add(table_name)
+        table_names.append(table_name)
+        attributes: list[str] = []
+        for column in detail.get("columns", [])[:6]:
+            name = str(column.get("name") or "").strip()
+            if not name:
+                continue
+            attributes.append(f"_{name}_" if column.get("is_primary") else name)
+        if not attributes:
+            attributes = ["_id_"]
+        entity_lines.append(f"{table_name}({', '.join(attributes)})")
+
+    for table_name in fallback_table_names:
+        if table_name in seen_tables:
+            continue
+        seen_tables.add(table_name)
+        table_names.append(table_name)
+        entity_lines.append(f"{table_name}(_id_)")
+
+    relation_lines: list[str] = []
+    relation_seen: set[tuple[str, str]] = set()
+    for detail in table_details:
+        current_table = str(detail.get("table") or "").strip()
+        if not current_table:
+            continue
+        for column in detail.get("columns", []):
+            target = _infer_relationship_target(current_table, str(column.get("name") or ""), table_names)
+            if not target:
+                continue
+            pair = (target, current_table)
+            if pair in relation_seen:
+                continue
+            relation_seen.add(pair)
+            relation_lines.append(f"{target} --- 1 --- < 关联 > --- N --- {current_table}")
+
+    return "\n".join([*entity_lines, *([""] if relation_lines else []), *relation_lines]).strip()
+
+
+def _build_generic_er_spec(config: dict[str, Any], manifest: dict[str, Any], workspace_root: Path) -> FigureSpec | None:
+    project_root = Path(manifest.get("project_root") or workspace_root).resolve()
+    source_paths = manifest.get("source_paths", {}) or {}
+    database_file = _resolve_project_member(project_root, source_paths.get("database"))
+    table_details = _parse_sql_table_details(database_file)
+    fallback_table_names = _material_pack_database_table_names(config, workspace_root)
+    dsl = _build_generic_er_dsl(table_details, fallback_table_names)
+    if not dsl:
+        return None
+
+    source_paths_for_hash: tuple[Path, ...] = ()
+    if database_file and database_file.exists():
+        source_paths_for_hash = (database_file,)
+    else:
+        material_pack_path = material_output_paths(config, workspace_root)["material_pack_json"]
+        if material_pack_path.exists():
+            source_paths_for_hash = (material_pack_path,)
+
+    return FigureSpec(
+        "4.2",
+        "图4.2 数据库E-R图",
+        "generated/fig4-2-er-diagram.png",
+        dsl,
+        renderer="dbdia-er",
+        source_paths=source_paths_for_hash,
+    )
+
+
 def _render_dbdia_er_diagram_png(spec: FigureSpec, output_path: Path, workspace_root: Path) -> None:
     classes_dir, antlr_jar = _ensure_dbdia_runtime()
     _ensure_graphviz_wasm_runtime()
@@ -1476,6 +1682,10 @@ def _build_specs(config: dict[str, Any], manifest: dict[str, Any], workspace_roo
                 source_paths=(er.source_path,),
             )
         )
+    else:
+        generic_er_spec = _build_generic_er_spec(config, manifest, workspace_root)
+        if generic_er_spec is not None:
+            specs.append(generic_er_spec)
     specs.append(
         FigureSpec(
             "4.3",

@@ -27,12 +27,12 @@ else:
 FIXTURE_PROJECT_ROOT = PRIMARY_WORKFLOW_ROOT / "workflow" / "fixtures" / "fabric_trace_demo"
 SELFTEST_DOCX_NAME = "selftest_release.docx"
 CHAPTER5_BRIEF_EXPECTED = [
-    "代码截图仅作为实现证据插图使用，不编号，不写“图5.x”题注，也不单独形成图题段落。",
-    "若使用代码截图，必须紧跟在对应的后端或前端代码块之后插入，不能单独生成“关键代码截图”小节。",
+    "代码截图仅作为可选实现证据插图使用，不编号，不写“图5.x”题注，也不单独形成图题段落。",
+    "若使用代码截图，只能作为可选实现证据，并且必须紧跟在对应的后端或前端代码块之后插入，不能单独生成“关键代码截图”小节。",
 ]
 CHAPTER5_PACKET_EXPECTED = [
-    "Code screenshots in chapter 5 are inline implementation evidence only; do not assign figure numbers, `图5.x` captions, or separate caption paragraphs to them.",
-    "If code screenshots are used, insert them immediately after the matching backend or frontend code block inside that same subfunction; do not create a standalone `关键代码截图` subsection.",
+    "Code screenshots in chapter 5 are optional inline implementation evidence only; do not assign figure numbers, `图5.x` captions, or separate caption paragraphs to them.",
+    "If code screenshots are used, treat them as optional evidence only, insert them immediately after the matching backend or frontend code block inside that same subfunction, and do not create a standalone `关键代码截图` subsection.",
 ]
 CHAPTER6_BRIEF_EXPECTED = [
     "第 6 章按样稿式测试章节来写，不写成压缩版测试总结。",
@@ -322,6 +322,19 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
         chapter5_path = fixture_workspace / "polished_v3" / "05-系统实现.md"
         _require(chapter4_path.exists(), f"fixture chapter 4 missing: {chapter4_path}")
         _require(chapter5_path.exists(), f"fixture chapter 5 missing: {chapter5_path}")
+
+        chapter4_text = chapter4_path.read_text(encoding="utf-8")
+        chapter5_text = chapter5_path.read_text(encoding="utf-8")
+        for label, ok, actual in (
+            ("fixture_scaffold_marker_4_2", "<!-- figure:4.2 -->" in chapter4_text, "<!-- figure:4.2 -->" in chapter4_text),
+            ("fixture_scaffold_marker_5_1", "<!-- figure:5.1 -->" in chapter5_text, "<!-- figure:5.1 -->" in chapter5_text),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture scaffold did not emit required figure markers")
+
+        chapter4_negative_text = chapter4_text.replace("<!-- figure:4.2 -->", "", 1)
+        chapter4_path.write_text(chapter4_negative_text, encoding="utf-8")
 
         negative_check_cmd = [sys.executable, str(cli_path), "check-workspace", "--config", str(config_path)]
         negative_check_result, negative_check_stdout, _ = _run_command(

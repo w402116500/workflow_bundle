@@ -13,7 +13,7 @@ from core.build_final_thesis_docx import main as build_main, resolve_output_docx
 from core.ai_image_generation import run_prepare_ai_figures
 from core.code_evidence import run_extract_code
 from core.extract import run_extract
-from core.figure_assets import run_prepare_figures, run_prepare_uml_samples
+from core.figure_assets import run_prepare_figures
 from core.intake import run_intake
 from core.postprocess_paths import resolve_postprocess_paths
 from core.release_summary import run_write_build_summary, run_write_finalization_summary, run_write_release_summary
@@ -233,15 +233,6 @@ def _print_prepare_ai_figures_result(result: dict[str, Any]) -> None:
         print(f"{item['figure_no']} [{item.get('status', 'prepared')}]: {item['path']}")
 
 
-def _print_prepare_uml_samples_result(result: dict[str, Any]) -> None:
-    print(f"config_path: {result['config_path']}")
-    print(f"diagram_dir: {result['diagram_dir']}")
-    print(f"summary_json: {result['summary_json']}")
-    print(f"generated_samples: {len(result['generated_samples'])}")
-    for item in result["generated_samples"]:
-        print(f"{item['figure_no']} [{item.get('status', 'rendered')}]: {item['path']}")
-
-
 def _run_release_build_flow(config_path: Path, output_name: str | None, command_name: str) -> dict[str, Any]:
     def _action() -> dict[str, Any]:
         figure_result = run_prepare_figures(config_path)
@@ -406,11 +397,6 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare_ai_figures_parser.add_argument("--fig", action="append", dest="figures")
     prepare_ai_figures_parser.add_argument("--force", action="store_true")
     prepare_ai_figures_parser.add_argument("--dry-run", action="store_true")
-
-    prepare_uml_samples_parser = subparsers.add_parser("prepare-uml-samples", help="Generate local PlantUML sample diagrams for the current workspace.")
-    prepare_uml_samples_parser.add_argument("--config", type=Path)
-    prepare_uml_samples_parser.add_argument("--diagram", action="append", dest="diagrams", choices=["class", "sequence"])
-    prepare_uml_samples_parser.add_argument("--force", action="store_true")
 
     scaffold_parser = subparsers.add_parser("scaffold", help="Generate chapter skeletons and literature tasks from a workspace config.")
     scaffold_parser.add_argument("--config", type=Path)
@@ -714,29 +700,6 @@ def main(argv: list[str] | None = None) -> int:
             )(run_prepare_ai_figures(config_path, args.figures, force=args.force, dry_run=args.dry_run)),
         )
         _print_prepare_ai_figures_result(result)
-        return 0
-
-    if args.command == "prepare-uml-samples":
-        config_path = _resolve_config_arg(args.config)
-        result = _run_with_workspace_lock(
-            config_path,
-            "prepare-uml-samples",
-            lambda: (
-                lambda inner: (
-                    _record_workspace_state(
-                        config_path,
-                        "prepare-uml-samples",
-                        {
-                            "sample_count": len(inner["generated_samples"]),
-                            "force": args.force,
-                            "diagrams": args.diagrams or [],
-                        },
-                    ),
-                    inner,
-                )[1]
-            )(run_prepare_uml_samples(config_path, args.diagrams, force=args.force)),
-        )
-        _print_prepare_uml_samples_result(result)
         return 0
 
     if args.command == "scaffold":
