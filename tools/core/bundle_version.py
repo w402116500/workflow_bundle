@@ -13,7 +13,11 @@ else:
     PRIMARY_WORKFLOW_ROOT = THIS_ROOT / "workflow_bundle" if (THIS_ROOT / "workflow_bundle").exists() else THIS_ROOT
 
 BUNDLE_VERSION_FILE = PRIMARY_WORKFLOW_ROOT / "VERSION"
-SEMVER_TAG_PATTERN = re.compile(r"^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
+SEMVER_TAG_PATTERN = re.compile(
+    r"^v(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)"
+    r"(?:-(?P<prerelease>[0-9A-Za-z.-]+))?"
+    r"(?:\+(?P<build>[0-9A-Za-z.-]+))?$"
+)
 
 
 def read_bundle_version() -> str:
@@ -43,14 +47,38 @@ def _run_git(args: list[str]) -> str:
 
 
 def _latest_semver_tag() -> str:
-    raw = _run_git(["tag", "--sort=-v:refname"])
+    raw = _run_git(["tag"])
     if not raw:
         return ""
+    candidates: list[str] = []
     for line in raw.splitlines():
         tag = line.strip()
         if SEMVER_TAG_PATTERN.match(tag):
-            return tag
-    return ""
+            candidates.append(tag)
+    if not candidates:
+        return ""
+    return max(candidates, key=_semver_sort_key)
+
+
+def _semver_sort_key(tag: str) -> tuple[int, int, int, int, tuple[tuple[int, int | str], ...]]:
+    match = SEMVER_TAG_PATTERN.match(tag)
+    if not match:
+        return (0, 0, 0, -1, ())
+    prerelease = match.group("prerelease") or ""
+    identifiers: list[tuple[int, int | str]] = []
+    if prerelease:
+        for part in prerelease.split("."):
+            if part.isdigit():
+                identifiers.append((0, int(part)))
+            else:
+                identifiers.append((1, part))
+    return (
+        int(match.group("major")),
+        int(match.group("minor")),
+        int(match.group("patch")),
+        1 if not prerelease else 0,
+        tuple(identifiers),
+    )
 
 
 def bundle_version_info() -> dict[str, Any]:

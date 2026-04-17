@@ -74,3 +74,16 @@
   - `bash workflow/scripts/check_bundle_sync.sh`
   - `python3 tools/cli.py selftest`
   - `git diff --check`
+
+## 2026-04-18 (v0.5.1 release)
+
+- Purpose: 以补丁版本修复 `latest_semver_tag` 在混合 tag 仓库中的误判问题，避免回改已发布的 `v0.5.0` 正式 tag。
+- Changes:
+  - 修复 `tools/core/bundle_version.py`，改为先过滤 semver tag 再按语义化版本规则选择最新 tag。
+  - 将当前正式版本提升为 `0.5.1`，并新增 `docs/releases/v0.5.1.md` 记录补丁版 release note。
+  - 保留 `v0.5.0` 与 `v0.5.0-rc1` 作为已发布历史版本，不重写既有 tag。
+- Validation:
+  - `python3 tools/cli.py version`
+  - `bash workflow/scripts/check_bundle_sync.sh`
+  - `python3 tools/cli.py selftest`
+  - `git diff --check`

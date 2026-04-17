@@ -1,7 +1,18 @@
 # Changelog
 
-本文件从 `0.5.0` 开始维护结构化版本记录。
+本文件从 `0.5.0` 开始维护结构化版本记录，当前最新版本为 `0.5.1`。
 更早的历史提交与中文 milestone tag 仍然存在于 Git 历史中，但未形成统一 changelog；从当前版本起，正式 release 以语义化版本号为准。
+
+## [0.5.1] - 2026-04-18
+
+### Fixed
+
+- 修复 `tools/core/bundle_version.py` 中 `latest_semver_tag` 的选择逻辑，避免在中文 milestone tag 与 semver tag 混排时错误回退到 `v0.5.0-rc1`。
+
+### Changed
+
+- 当前 bundle 正式版本提升为 `0.5.1`。
+- 新增 `docs/releases/v0.5.1.md`，记录本次补丁版发布说明。
 
 ## [0.5.0] - 2026-04-18
 
@@ -25,6 +36,7 @@
 
 ## Historical Tags
 
+- `v0.5.0`
 - `v0.4.0`
 - `v0.3.0`
 - `v0.2.0`
