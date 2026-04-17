@@ -50,3 +50,14 @@
   - `python3 tools/cli.py version`
   - `bash workflow/scripts/check_bundle_sync.sh`
   - `python3 tools/cli.py selftest`
+
+## 2026-04-18 (release notes)
+
+- Purpose: 为 `v0.5.0-rc1` 补齐可对外引用的发布说明，并给后续 semver 版本建立固定的 release note 归档位置。
+- Changes:
+  - 新增 `docs/releases/README.md`，明确 release note 的目录用途、命名规则和使用边界。
+  - 新增 `docs/releases/v0.5.0-rc1.md`，归档首个 semver 预发布版本的中文 release note。
+  - 更新 `BUNDLE_MANIFEST.md`，把 `docs/releases/` 纳入公共 bundle 文档清单。
+- Validation:
+  - `git diff --check`
+  - `python3 tools/cli.py selftest`

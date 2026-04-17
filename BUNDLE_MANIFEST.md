@@ -36,6 +36,7 @@
 - `paper-reader/`
 - `docs/current_workflow_status_audit_2026-03-31.md`
 - `docs/archive/README.md`
+- `docs/releases/`
 - `docs/workflow_optimization_log.md`
 
 ## Excluded
@@ -54,6 +55,7 @@
 
 - `workflow/` 与 `tools/` 是正式流程入口。
 - `VERSION` 与 `CHANGELOG.md` 用于提供正式版本号与变更追踪入口。
+- `docs/releases/` 用于归档对外发布说明，补充 `CHANGELOG.md` 的结构化变更摘要。
 - `workflow/skills/` 是 workspace 配置和写章流程的直接依赖。
 - `workflow/fixtures/fabric_trace_demo/` 被保留，是为了提供 bundle 内自包含的 smoke intake 验证入口。
 - 根目录 `paper-research-agent/` 与 `paper-reader/` 被保留，是为了兼容当前 `intake` 工具的技能复制源路径。
