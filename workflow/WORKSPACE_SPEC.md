@@ -142,6 +142,12 @@
   - `output_name`（可选，默认 `generated/fig<图号>-er-diagram.png`）
   `source_path` 指向 workspace 根目录相对路径下的 `.dbdia` 源文件；启用后 `prepare-figures` 会在 `docs/images/generated_src/` 额外写出 `.dbdia/.dot/.svg` 侧车文件。
 - `postprocess` 段用于声明 Windows Word 终排输出位置，默认会写到 `final/`，不与 `word_output/` 中的基础排版稿混放。
+- `postprocess.windows_bridge` 用于声明 WSL -> Windows 终排桥接参数。默认通过 `powershell.exe + py` 调宿主 Windows PowerShell / Word；如宿主环境不同，可覆写 PowerShell 或 Python 启动器。
+- `document_format` 段用于声明当前 workspace 的文档版式 profile。默认 `legacy` 保持原有输出风格；如需贴近学校模板，可切换到如 `cuit-undergrad-zh` 这类 profile，并允许按字段覆写页边距、标题、题注、页眉页脚、图表编号风格与代码块导出方式。
+- `document_format.code_blocks` 用于控制 Markdown fenced code block 的 DOCX 导出策略。当前支持：
+  - `render_mode = image | text`
+  - `text_style = plain-paper | mono-block`
+  `image` 保持旧行为，把代码块转成 PNG 再插入 DOCX；`text` 直接以文字代码块写入 DOCX，适合需要可复制源码的论文版本。
 - `workflow_state` 段用于声明工作流状态文件位置，包括冷启动 handoff 和 workspace 执行日志。
 - `workflow_state.workspace_lock_json` 用于串行化同一 workspace 的变更型命令，避免多会话并发改写。
 - `project_profile.md` 是给执行者阅读的可视化版本，`project_profile.json` 是 `prepare-writing` 与 `prepare-chapter` 的结构输入。

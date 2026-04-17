@@ -23,6 +23,13 @@ from core.code_image_renderer import (
     render_prepared_code_lines_image,
     split_code_image_lines,
 )
+from core.document_format import (
+    NUMBER_TOKEN_RE,
+    normalize_caption_text,
+    normalize_inline_reference_text,
+    normalize_internal_figure_number,
+    resolve_document_format,
+)
 
 WORKSPACE_DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG_PATH = None
@@ -37,8 +44,8 @@ FIG_RE = re.compile(r"!\[(?P<alt>.*?)\]\((?P<path>.*?)\)")
 HEADING_RE = re.compile(r"^(?P<level>#{1,6})\s+(?P<text>.+?)\s*$")
 TABLE_SEP_RE = re.compile(r"^\|\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)+\|\s*$")
 TABLE_ROW_RE = re.compile(r"^\|.*\|\s*$")
-TABLE_CAPTION_RE = re.compile(r"^表\d+\.\d+\s+.+")
-FIG_CAPTION_RE = re.compile(r"^图\d+\.\d+\s+.+")
+TABLE_CAPTION_RE = re.compile(rf"^表{NUMBER_TOKEN_RE}\s+.+")
+FIG_CAPTION_RE = re.compile(rf"^图{NUMBER_TOKEN_RE}\s+.+")
 FIG_PLACEHOLDER_RE = re.compile(r"^（配图占位，终稿插入图(?P<figs>.+?)）\s*$")
 FIG_HIDDEN_MARKER_RE = re.compile(r"^<!--\s*figure:\s*(?P<figs>.+?)\s*-->\s*$")
 REF_ENTRY_RE = re.compile(r"^\[(\d+)\]\s*")
@@ -94,6 +101,28 @@ CODE_RENDER_FONT_PATH_CANDIDATES = [
     Path("C:/Windows/Fonts/simsunb.ttf"),
     Path("C:/Windows/Fonts/Arial.ttf"),
 ]
+CODE_BLOCK_TEXT_STYLE_PRESETS: dict[str, dict[str, object]] = {
+    "plain-paper": {
+        "font_cn": "SimSun",
+        "font_en": "Times New Roman",
+        "size_pt": 10.5,
+        "line_spacing": "single",
+        "left_indent_pt": 10.0,
+        "space_before_pt": 6.0,
+        "space_after_pt": 6.0,
+        "tab_size": 4,
+    },
+    "mono-block": {
+        "font_cn": "SimSun",
+        "font_en": "Consolas",
+        "size_pt": 10.5,
+        "line_spacing": "single",
+        "left_indent_pt": 10.0,
+        "space_before_pt": 6.0,
+        "space_after_pt": 6.0,
+        "tab_size": 4,
+    },
+}
 
 
 def _resolve_default_config_path(config_path: Path | None = None) -> Path:
@@ -149,6 +178,7 @@ class BuildSettings:
     default_keywords_cn: str
     default_keywords_en: str
     figure_map: dict[str, tuple[str, Path]]
+    document_format: dict[str, object]
 
 
 def _resolve_path(base: Path, raw_path: str) -> Path:
@@ -201,6 +231,7 @@ def _default_settings(workspace_root: Path | None = None) -> BuildSettings:
             "4.5": ("图4.5 带权限查询与审计追溯流程图", diagram_dir / "image-3.png"),
             "5.1": ("图5.1 系统功能结构图", diagram_dir / "image-1.png"),
         },
+        document_format=resolve_document_format({}),
     )
 
 
@@ -218,6 +249,7 @@ def _load_settings(config_path: Path | None) -> BuildSettings:
     defaults = _default_settings(workspace_root)
     build_cfg = raw.get("build", {})
     defaults_cfg = raw.get("defaults", {})
+    document_format = resolve_document_format(raw)
 
     output_dir = _resolve_optional_path(workspace_root, build_cfg.get("output_dir"), defaults.output_dir)
     raw_figure_map = raw.get("figure_map")
@@ -243,6 +275,7 @@ def _load_settings(config_path: Path | None) -> BuildSettings:
         # Do not inherit legacy template figures when a workspace config is present.
         # Configured workspaces should opt in only to the figure assets they actually stage.
         figure_map={},
+        document_format=document_format,
     )
 
     for fig_num, fig_cfg in (raw_figure_map or {}).items():
@@ -257,6 +290,36 @@ def _load_settings(config_path: Path | None) -> BuildSettings:
     return settings
 
 
+def _extract_figure_number(text: str) -> str | None:
+    match = re.match(rf"^图(?P<num>{NUMBER_TOKEN_RE})\s+.+$", text.strip())
+    if not match:
+        return None
+    return normalize_internal_figure_number(match.group("num"))
+
+
+def _caption_mentions_figure(text: str | None, fig_num: str) -> bool:
+    if not text or not fig_num:
+        return False
+    extracted = _extract_figure_number(text.strip())
+    return extracted == normalize_internal_figure_number(fig_num)
+
+
+def _next_nonempty_line(lines: list[str], start_index: int) -> str:
+    for idx in range(start_index, len(lines)):
+        candidate = lines[idx].strip()
+        if candidate:
+            return candidate
+    return ""
+
+
+def _prev_nonempty_line(lines: list[str], start_index: int) -> str:
+    for idx in range(start_index, -1, -1):
+        candidate = lines[idx].strip()
+        if candidate:
+            return candidate
+    return ""
+
+
 SETTINGS = _default_settings()
 
 
@@ -264,7 +327,59 @@ def _activate_settings(settings: BuildSettings) -> None:
     global SETTINGS
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     settings.processed_img_dir.mkdir(parents=True, exist_ok=True)
+    for stale in settings.processed_img_dir.glob("codeblock_*"):
+        if stale.is_file():
+            stale.unlink()
     SETTINGS = settings
+
+
+def _document_format() -> dict[str, object]:
+    return SETTINGS.document_format
+
+
+def _body_format() -> dict[str, object]:
+    return dict(_document_format().get("body", {}))
+
+
+def _code_block_render_mode() -> str:
+    raw = str(_document_format().get("code_blocks", {}).get("render_mode", "image") or "image").strip().lower()
+    return "text" if raw == "text" else "image"
+
+
+def _code_block_format() -> dict[str, object]:
+    raw = dict(_document_format().get("code_blocks", {}))
+    text_style = str(raw.get("text_style", "plain-paper") or "plain-paper").strip().lower()
+    preset = dict(CODE_BLOCK_TEXT_STYLE_PRESETS.get(text_style, CODE_BLOCK_TEXT_STYLE_PRESETS["plain-paper"]))
+    for key, value in raw.items():
+        if key in {"render_mode", "text_style"}:
+            continue
+        preset[key] = value
+    preset["text_style"] = text_style
+    return preset
+
+
+def _line_spacing_pt() -> float:
+    body = _body_format()
+    return float(body.get("line_spacing_pt", LINE_SPACING_PT))
+
+
+def _title_spacing_pt() -> float:
+    return _line_spacing_pt() / 2
+
+
+def _body_first_line_indent_pt() -> float:
+    body = _body_format()
+    return float(body.get("first_line_indent_pt", BODY_FIRST_LINE_INDENT_PT))
+
+
+def _alignment_from_name(name: str | None) -> WD_ALIGN_PARAGRAPH:
+    mapping = {
+        "left": WD_ALIGN_PARAGRAPH.LEFT,
+        "center": WD_ALIGN_PARAGRAPH.CENTER,
+        "right": WD_ALIGN_PARAGRAPH.RIGHT,
+        "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+    }
+    return mapping.get(str(name or "left").lower(), WD_ALIGN_PARAGRAPH.LEFT)
 
 
 def _set_style_rfonts(style, east_asia: str, ascii_font: str):
@@ -336,100 +451,200 @@ def _force_style_element_color_black_by_id(doc: Document, style_id: str) -> None
         return
 
 
+def _clear_paragraph(paragraph) -> None:
+    p = paragraph._element
+    for child in list(p):
+        p.remove(child)
+
+
+def _add_field_run(paragraph, instruction: str) -> None:
+    begin = OxmlElement("w:fldChar")
+    begin.set(qn("w:fldCharType"), "begin")
+    run_begin = paragraph.add_run()
+    run_begin._element.append(begin)
+
+    instr_text = OxmlElement("w:instrText")
+    instr_text.set(qn("xml:space"), "preserve")
+    instr_text.text = instruction
+    run_instr = paragraph.add_run()
+    run_instr._element.append(instr_text)
+    _set_run_rfonts(run_instr, east_asia="SimSun", ascii_font="Times New Roman")
+    _set_run_color_black(run_instr)
+
+    separate = OxmlElement("w:fldChar")
+    separate.set(qn("w:fldCharType"), "separate")
+    run_sep = paragraph.add_run()
+    run_sep._element.append(separate)
+
+    end = OxmlElement("w:fldChar")
+    end.set(qn("w:fldCharType"), "end")
+    run_end = paragraph.add_run()
+    run_end._element.append(end)
+
+
+def _apply_header_footer(doc: Document) -> None:
+    header_footer = dict(_document_format().get("header_footer", {}))
+    if not header_footer.get("enabled"):
+        return
+
+    header_text = str(header_footer.get("header_text", "") or "").strip()
+    header_font_cn = str(header_footer.get("header_font_cn", "SimSun"))
+    header_font_en = str(header_footer.get("header_font_en", "Times New Roman"))
+    header_size = float(header_footer.get("header_size_pt", 10.5))
+    footer_size = float(header_footer.get("footer_size_pt", 10.5))
+    footer_line_spacing = _line_spacing_pt()
+
+    for section in doc.sections:
+        section.header.is_linked_to_previous = False
+        section.footer.is_linked_to_previous = False
+
+        header_para = section.header.paragraphs[0] if section.header.paragraphs else section.header.add_paragraph()
+        _clear_paragraph(header_para)
+        header_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        header_para.paragraph_format.space_before = Pt(0)
+        header_para.paragraph_format.space_after = Pt(0)
+        header_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        header_para.paragraph_format.line_spacing = Pt(footer_line_spacing)
+        if header_text:
+            run = header_para.add_run(header_text)
+            run.font.size = Pt(header_size)
+            _set_run_rfonts(run, east_asia=header_font_cn, ascii_font=header_font_en)
+            _set_run_color_black(run)
+
+        footer_para = section.footer.paragraphs[0] if section.footer.paragraphs else section.footer.add_paragraph()
+        _clear_paragraph(footer_para)
+        footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        footer_para.paragraph_format.space_before = Pt(0)
+        footer_para.paragraph_format.space_after = Pt(0)
+        footer_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        footer_para.paragraph_format.line_spacing = Pt(footer_line_spacing)
+
+        text_run = footer_para.add_run("第")
+        text_run.font.size = Pt(footer_size)
+        _set_run_rfonts(text_run, east_asia="SimSun", ascii_font="Times New Roman")
+        _set_run_color_black(text_run)
+        _add_field_run(footer_para, " PAGE ")
+
+        text_run = footer_para.add_run("页 共")
+        text_run.font.size = Pt(footer_size)
+        _set_run_rfonts(text_run, east_asia="SimSun", ascii_font="Times New Roman")
+        _set_run_color_black(text_run)
+        _add_field_run(footer_para, " NUMPAGES ")
+
+        text_run = footer_para.add_run("页")
+        text_run.font.size = Pt(footer_size)
+        _set_run_rfonts(text_run, east_asia="SimSun", ascii_font="Times New Roman")
+        _set_run_color_black(text_run)
+
+
 def _configure_page(doc: Document):
-    section = doc.sections[0]
-    section.page_width = Mm(210)
-    section.page_height = Mm(297)
-    section.orientation = WD_ORIENT.PORTRAIT
-    section.top_margin = Mm(25)
-    section.bottom_margin = Mm(20)
-    section.left_margin = Mm(25)
-    section.right_margin = Mm(20)
+    page = dict(_document_format().get("page", {}))
+    for section in doc.sections:
+        section.page_width = Mm(float(page.get("width_mm", 210.0)))
+        section.page_height = Mm(float(page.get("height_mm", 297.0)))
+        section.orientation = WD_ORIENT.PORTRAIT
+        section.top_margin = Mm(float(page.get("top_margin_mm", 25.0)))
+        section.bottom_margin = Mm(float(page.get("bottom_margin_mm", 20.0)))
+        section.left_margin = Mm(float(page.get("left_margin_mm", 25.0)))
+        section.right_margin = Mm(float(page.get("right_margin_mm", 20.0)))
 
 
 def _configure_styles(doc: Document):
+    body = _body_format()
+    headings = dict(_document_format().get("headings", {}))
+    toc = dict(_document_format().get("toc", {}))
+    captions = dict(_document_format().get("captions", {}))
+    line_spacing_pt = _line_spacing_pt()
+
     normal = doc.styles["Normal"]
-    normal.font.size = Pt(12)
+    normal.font.size = Pt(float(body.get("size_pt", 12.0)))
     normal.font.bold = False
-    _set_style_rfonts(normal, east_asia="SimSun", ascii_font="Times New Roman")
+    _set_style_rfonts(normal, east_asia=str(body.get("font_cn", "SimSun")), ascii_font=str(body.get("font_en", "Times New Roman")))
     _set_style_color_black(normal)
     ppf = normal.paragraph_format
     ppf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    ppf.line_spacing = Pt(LINE_SPACING_PT)
+    ppf.line_spacing = Pt(line_spacing_pt)
     ppf.space_before = Pt(0)
     ppf.space_after = Pt(0)
 
-    def add_heading_style(name: str, size_pt: float, align: WD_ALIGN_PARAGRAPH):
+    def add_heading_style(name: str, level_key: str, size_pt: float, align: WD_ALIGN_PARAGRAPH):
+        cfg = dict(headings.get(level_key, {}))
         if name in doc.styles:
             st = doc.styles[name]
         else:
             st = doc.styles.add_style(name, 1)
-        st.font.size = Pt(size_pt)
-        st.font.bold = False
-        _set_style_rfonts(st, east_asia="SimHei", ascii_font="Times New Roman")
+        st.font.size = Pt(float(cfg.get("size_pt", size_pt)))
+        st.font.bold = bool(cfg.get("bold", False))
+        east_asia = str(cfg.get("font_cn", "SimHei"))
+        ascii_font = str(cfg.get("font_en", "Times New Roman"))
+        _set_style_rfonts(st, east_asia=east_asia, ascii_font=ascii_font)
         _set_style_color_black(st)
         pf = st.paragraph_format
         pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-        pf.line_spacing = Pt(LINE_SPACING_PT)
-        pf.space_before = Pt(TITLE_SPACING_HALF_LINE)
-        pf.space_after = Pt(TITLE_SPACING_HALF_LINE)
-        pf.alignment = align
+        pf.line_spacing = Pt(line_spacing_pt)
+        pf.space_before = Pt(float(cfg.get("space_before_pt", _title_spacing_pt())))
+        pf.space_after = Pt(float(cfg.get("space_after_pt", _title_spacing_pt())))
+        pf.alignment = _alignment_from_name(str(cfg.get("align", ""))) if cfg.get("align") else align
         try:
             linked = doc.styles[f"{name} Char"]
         except Exception:
             linked = None
         if linked is not None:
-            _set_style_rfonts(linked, east_asia="SimHei", ascii_font="Times New Roman")
+            linked.font.bold = bool(cfg.get("bold", False))
+            _set_style_rfonts(linked, east_asia=east_asia, ascii_font=ascii_font)
             _set_style_color_black(linked)
         return st
 
-    add_heading_style("Heading 1", 18, WD_ALIGN_PARAGRAPH.LEFT)
-    add_heading_style("Heading 2", 15, WD_ALIGN_PARAGRAPH.LEFT)
-    add_heading_style("Heading 3", 14, WD_ALIGN_PARAGRAPH.LEFT)
-    add_heading_style("Heading 4", 12, WD_ALIGN_PARAGRAPH.LEFT)
+    add_heading_style("Heading 1", "1", 18, WD_ALIGN_PARAGRAPH.LEFT)
+    add_heading_style("Heading 2", "2", 15, WD_ALIGN_PARAGRAPH.LEFT)
+    add_heading_style("Heading 3", "3", 14, WD_ALIGN_PARAGRAPH.LEFT)
+    add_heading_style("Heading 4", "4", 12, WD_ALIGN_PARAGRAPH.LEFT)
     for style_id in ("Heading1", "Heading2", "Heading3", "Heading4", "Heading1Char", "Heading2Char", "Heading3Char", "Heading4Char"):
         _force_style_element_color_black_by_id(doc, style_id)
 
-    def _configure_toc_style(name: str, east_asia: str, size_pt: float):
+    def _configure_toc_style(name: str, level_key: str, east_asia: str, size_pt: float):
+        cfg = dict(toc.get(level_key, {}))
         try:
             st = doc.styles[name]
         except Exception:
             return
-        st.font.size = Pt(size_pt)
-        st.font.bold = False
-        _set_style_rfonts(st, east_asia=east_asia, ascii_font="Times New Roman")
+        st.font.size = Pt(float(cfg.get("size_pt", size_pt)))
+        st.font.bold = bool(cfg.get("bold", False))
+        _set_style_rfonts(st, east_asia=str(cfg.get("font_cn", east_asia)), ascii_font=str(cfg.get("font_en", "Times New Roman")))
         _set_style_color_black(st)
         pf = st.paragraph_format
         pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-        pf.line_spacing = Pt(LINE_SPACING_PT)
+        pf.line_spacing = Pt(line_spacing_pt)
         pf.space_before = Pt(0)
         pf.space_after = Pt(0)
 
-    _configure_toc_style("TOC 1", east_asia="SimHei", size_pt=14)
-    _configure_toc_style("TOC 2", east_asia="SimSun", size_pt=12)
-    _configure_toc_style("TOC 3", east_asia="SimSun", size_pt=12)
+    _configure_toc_style("TOC 1", "1", east_asia="SimHei", size_pt=14)
+    _configure_toc_style("TOC 2", "2", east_asia="SimSun", size_pt=12)
+    _configure_toc_style("TOC 3", "3", east_asia="SimSun", size_pt=12)
 
     cap = doc.styles.add_style("FigureCaption", 1) if "FigureCaption" not in doc.styles else doc.styles["FigureCaption"]
-    cap.font.size = Pt(12)
-    cap.font.bold = True
-    _set_style_rfonts(cap, east_asia="SimHei", ascii_font="Times New Roman")
+    fig_cap = dict(captions.get("figure", {}))
+    cap.font.size = Pt(float(fig_cap.get("size_pt", 12.0)))
+    cap.font.bold = bool(fig_cap.get("bold", True))
+    _set_style_rfonts(cap, east_asia=str(fig_cap.get("font_cn", "SimHei")), ascii_font=str(fig_cap.get("font_en", "Times New Roman")))
     _set_style_color_black(cap)
     cap_pf = cap.paragraph_format
-    cap_pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    cap_pf.alignment = _alignment_from_name(str(fig_cap.get("align", "center")))
     cap_pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    cap_pf.line_spacing = Pt(LINE_SPACING_PT)
+    cap_pf.line_spacing = Pt(float(fig_cap.get("line_spacing_pt", line_spacing_pt)))
     cap_pf.space_before = Pt(0)
     cap_pf.space_after = Pt(0)
 
     tcap = doc.styles.add_style("TableCaption", 1) if "TableCaption" not in doc.styles else doc.styles["TableCaption"]
-    tcap.font.size = Pt(12)
-    tcap.font.bold = True
-    _set_style_rfonts(tcap, east_asia="SimHei", ascii_font="Times New Roman")
+    tbl_cap = dict(captions.get("table", {}))
+    tcap.font.size = Pt(float(tbl_cap.get("size_pt", 12.0)))
+    tcap.font.bold = bool(tbl_cap.get("bold", True))
+    _set_style_rfonts(tcap, east_asia=str(tbl_cap.get("font_cn", "SimHei")), ascii_font=str(tbl_cap.get("font_en", "Times New Roman")))
     _set_style_color_black(tcap)
     tcap_pf = tcap.paragraph_format
-    tcap_pf.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    tcap_pf.alignment = _alignment_from_name(str(tbl_cap.get("align", "center")))
     tcap_pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    tcap_pf.line_spacing = Pt(LINE_SPACING_PT)
+    tcap_pf.line_spacing = Pt(float(tbl_cap.get("line_spacing_pt", line_spacing_pt)))
     tcap_pf.space_before = Pt(0)
     tcap_pf.space_after = Pt(0)
 
@@ -481,10 +696,10 @@ def _add_toc(doc: Document):
 def _apply_body_paragraph_format(paragraph, indent: bool = True):
     pf = paragraph.paragraph_format
     pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    pf.line_spacing = Pt(LINE_SPACING_PT)
+    pf.line_spacing = Pt(_line_spacing_pt())
     pf.space_before = Pt(0)
     pf.space_after = Pt(0)
-    pf.first_line_indent = Pt(BODY_FIRST_LINE_INDENT_PT) if indent else Pt(0)
+    pf.first_line_indent = Pt(_body_first_line_indent_pt()) if indent else Pt(0)
 
 
 def _fix_zoom_percent(doc: Document):
@@ -560,48 +775,95 @@ def _render_code_images(code_lines: list[str], output_path: Path, font_size: int
     return rendered_paths
 
 
+def _normalize_code_line_text(text: str, tab_size: int) -> str:
+    expanded = str(text).replace("\t", " " * max(1, tab_size))
+    leading_spaces = len(expanded) - len(expanded.lstrip(" "))
+    if leading_spaces > 0:
+        expanded = ("\u00A0" * leading_spaces) + expanded[leading_spaces:]
+    return expanded or "\u00A0"
+
+
+def _add_text_code_block(doc: Document, code_lines: list[str]) -> None:
+    code_cfg = _code_block_format()
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    pf = p.paragraph_format
+    pf.left_indent = Pt(float(code_cfg.get("left_indent_pt", 10.0)))
+    pf.first_line_indent = Pt(0)
+    pf.space_before = Pt(float(code_cfg.get("space_before_pt", 6.0)))
+    pf.space_after = Pt(float(code_cfg.get("space_after_pt", 6.0)))
+    if str(code_cfg.get("line_spacing", "single") or "single").strip().lower() == "single":
+        pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
+    else:
+        pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        pf.line_spacing = Pt(float(code_cfg.get("line_spacing_pt", _line_spacing_pt())))
+
+    font_cn = str(code_cfg.get("font_cn", "SimSun") or "SimSun")
+    font_en = str(code_cfg.get("font_en", "Times New Roman") or "Times New Roman")
+    font_size = Pt(float(code_cfg.get("size_pt", 10.5)))
+    tab_size = int(code_cfg.get("tab_size", 4) or 4)
+
+    for index, line in enumerate(code_lines):
+        run = p.add_run(_normalize_code_line_text(line, tab_size))
+        run.font.size = font_size
+        run.font.bold = False
+        run.font.italic = False
+        run.font.name = font_en
+        _set_run_rfonts(run, east_asia=font_cn, ascii_font=font_en)
+        _set_run_color_black(run)
+        if index < len(code_lines) - 1:
+            run.add_break()
+
+
 def _add_title(doc: Document, text: str, font: str, bold: bool, style: str | None = None):
+    heading_cfg = dict(_document_format().get("headings", {}).get("1", {}))
     p = doc.add_paragraph(style=style) if style else doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
-    p.paragraph_format.space_before = Pt(TITLE_SPACING_HALF_LINE)
-    p.paragraph_format.space_after = Pt(TITLE_SPACING_HALF_LINE)
+    p.paragraph_format.line_spacing = Pt(_line_spacing_pt())
+    p.paragraph_format.space_before = Pt(float(heading_cfg.get("space_before_pt", _title_spacing_pt())))
+    p.paragraph_format.space_after = Pt(float(heading_cfg.get("space_after_pt", _title_spacing_pt())))
     r = p.add_run(text)
-    r.font.size = Pt(18)
-    r.font.bold = bold
-    r.font.name = "Times New Roman"
-    _set_run_rfonts(r, east_asia=font, ascii_font="Times New Roman")
+    r.font.size = Pt(float(heading_cfg.get("size_pt", 18.0)))
+    r.font.bold = bool(heading_cfg.get("bold", bold))
+    r.font.name = str(heading_cfg.get("font_en", "Times New Roman"))
+    _set_run_rfonts(r, east_asia=str(heading_cfg.get("font_cn", font)), ascii_font=str(heading_cfg.get("font_en", "Times New Roman")))
     _set_run_color_black(r)
     return p
 
 
 def _add_keywords_cn(doc: Document, keywords: str):
+    body = _body_format()
     p = doc.add_paragraph()
     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    p.paragraph_format.line_spacing = Pt(_line_spacing_pt())
     r1 = p.add_run("关键词：")
-    r1.font.size = Pt(14)
+    r1.font.size = Pt(float(body.get("size_pt", 12.0)))
     r1.font.bold = False
-    _set_run_rfonts(r1, east_asia="SimHei", ascii_font="Times New Roman")
-    r2 = p.add_run(keywords)
-    r2.font.size = Pt(12)
+    _set_run_rfonts(r1, east_asia="SimHei", ascii_font=str(body.get("font_en", "Times New Roman")))
+    _set_run_color_black(r1)
+    r2 = p.add_run(normalize_inline_reference_text(keywords, _document_format()))
+    r2.font.size = Pt(float(body.get("size_pt", 12.0)))
     r2.font.bold = False
-    _set_run_rfonts(r2, east_asia="SimSun", ascii_font="Times New Roman")
+    _set_run_rfonts(r2, east_asia=str(body.get("font_cn", "SimSun")), ascii_font=str(body.get("font_en", "Times New Roman")))
+    _set_run_color_black(r2)
 
 
 def _add_keywords_en(doc: Document, keywords: str):
+    body = _body_format()
     p = doc.add_paragraph()
     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    p.paragraph_format.line_spacing = Pt(_line_spacing_pt())
     r1 = p.add_run("Key words: ")
-    r1.font.size = Pt(14)
+    r1.font.size = Pt(float(body.get("size_pt", 12.0)))
     r1.font.bold = True
-    r1.font.name = "Times New Roman"
+    r1.font.name = str(body.get("font_en", "Times New Roman"))
+    _set_run_color_black(r1)
     r2 = p.add_run(keywords)
-    r2.font.size = Pt(12)
+    r2.font.size = Pt(float(body.get("size_pt", 12.0)))
     r2.font.bold = False
-    r2.font.name = "Times New Roman"
+    r2.font.name = str(body.get("font_en", "Times New Roman"))
+    _set_run_color_black(r2)
 
 
 def _sanitize_heading(text: str) -> str:
@@ -909,7 +1171,10 @@ def _configure_page_number_footers(doc: Document) -> None:
 def _add_text_with_cite_links(paragraph, text: str, ref_nums: set[str]):
     # Inline markdown markers are not part of the required thesis format.
     # Strip them here as a safety net (Markdown sources are also cleaned).
-    s = text.strip().replace("`", "").replace("**", "")
+    body = _body_format()
+    body_cn_font = str(body.get("font_cn", "SimSun"))
+    body_en_font = str(body.get("font_en", "Times New Roman"))
+    s = normalize_inline_reference_text(text.strip().replace("`", "").replace("**", ""), _document_format())
     if not s:
         return
     pos = 0
@@ -917,7 +1182,8 @@ def _add_text_with_cite_links(paragraph, text: str, ref_nums: set[str]):
         start, end = m.span()
         if start > pos:
             r = paragraph.add_run(s[pos:start])
-            _set_run_rfonts(r, east_asia="SimSun", ascii_font="Times New Roman")
+            _set_run_rfonts(r, east_asia=body_cn_font, ascii_font=body_en_font)
+            _set_run_color_black(r)
         num = m.group(1)
         cite_text = _format_cite_no(num)
         if num in ref_nums:
@@ -927,7 +1193,8 @@ def _add_text_with_cite_links(paragraph, text: str, ref_nums: set[str]):
         pos = end
     if pos < len(s):
         r = paragraph.add_run(s[pos:])
-        _set_run_rfonts(r, east_asia="SimSun", ascii_font="Times New Roman")
+        _set_run_rfonts(r, east_asia=body_cn_font, ascii_font=body_en_font)
+        _set_run_color_black(r)
 
 
 def _set_cell_shading(cell, fill: str):
@@ -1097,6 +1364,28 @@ def _is_code_screenshot_image(src: Path, alt: str) -> bool:
     return "code_screenshots" in path_parts or "代码截图" in alt_text
 
 
+def _resolve_numbered_figure_override(markdown_src: Path, alt: str, pending_fig_caption: str | None) -> tuple[str | None, Path | None]:
+    candidates = []
+    if pending_fig_caption and pending_fig_caption.strip():
+        candidates.append(pending_fig_caption.strip())
+    if alt.strip():
+        candidates.append(alt.strip())
+    for candidate in candidates:
+        if not FIG_CAPTION_RE.match(candidate):
+            continue
+        fig_num = _extract_figure_number(candidate)
+        if not fig_num:
+            continue
+        mapped = SETTINGS.figure_map.get(fig_num)
+        if not mapped:
+            continue
+        cap_text, mapped_src = mapped
+        if _caption_mentions_figure(candidate, fig_num):
+            cap_text = candidate
+        return normalize_caption_text(cap_text, "figure", _document_format()), mapped_src
+    return None, None
+
+
 def _add_image_with_caption(doc: Document, fig: FigureItem):
     section = doc.sections[0]
     avail_width_mm = float((section.page_width - section.left_margin - section.right_margin) / Mm(1))
@@ -1126,7 +1415,7 @@ def _add_image_with_caption(doc: Document, fig: FigureItem):
     run.add_picture(str(fig.processed_path), width=Mm(width_mm), height=Mm(height_mm))
 
     if fig.show_caption and fig.caption.strip():
-        p_cap = doc.add_paragraph(fig.caption, style="FigureCaption")
+        p_cap = doc.add_paragraph(normalize_caption_text(fig.caption, "figure", _document_format()), style="FigureCaption")
         p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p_cap.paragraph_format.keep_together = True
         p_cap.paragraph_format.space_before = Pt(0)
@@ -1135,7 +1424,7 @@ def _add_image_with_caption(doc: Document, fig: FigureItem):
 
 def _add_table(doc: Document, caption: str | None, headers: list[str], rows: list[list[str]]):
     if caption:
-        doc.add_paragraph((caption or "").replace("`", "").replace("**", ""), style="TableCaption")
+        doc.add_paragraph(normalize_caption_text((caption or "").replace("`", "").replace("**", ""), "table", _document_format()), style="TableCaption")
 
     table = doc.add_table(rows=1, cols=len(headers))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -1156,11 +1445,12 @@ def _add_table(doc: Document, caption: str | None, headers: list[str], rows: lis
             for p in cell.paragraphs:
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-                p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+                p.paragraph_format.line_spacing = Pt(_line_spacing_pt())
                 for run in p.runs:
                     run.font.size = Pt(10.5)
                     run.font.bold = False
                     _set_run_rfonts(run, east_asia="SimSun", ascii_font="Times New Roman")
+                    _set_run_color_black(run)
     _apply_three_line_table(table)
 
 
@@ -1170,6 +1460,13 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
     pending_table_caption: str | None = None
     pending_fig_caption: str | None = None
     code_block_index = 0
+    inserted_reference_title = False
+
+    if md_path.name == "REFERENCES.md":
+        has_reference_heading = any(HEADING_RE.match((line or "").strip()) for line in lines)
+        if not has_reference_heading:
+            _add_title(doc, "参考文献", font="SimHei", bold=False, style="Heading 1")
+            inserted_reference_title = True
 
     def add_paragraph(text: str):
         text = text.strip()
@@ -1196,7 +1493,7 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
                 if item:
                     p = doc.add_paragraph(style="List Bullet")
                     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-                    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+                    p.paragraph_format.line_spacing = Pt(_line_spacing_pt())
                     _add_text_with_cite_links(p, item, ref_nums)
                 i += 1
             continue
@@ -1211,7 +1508,7 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
                 if item:
                     p = doc.add_paragraph(style="List Number")
                     p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-                    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+                    p.paragraph_format.line_spacing = Pt(_line_spacing_pt())
                     _add_text_with_cite_links(p, item, ref_nums)
                 i += 1
             continue
@@ -1226,33 +1523,36 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
                 i += 1
 
             if code_lines:
-                code_block_index += 1
-                img_name = f"codeblock_{md_path.stem}_{code_block_index}.png"
-                img_path = SETTINGS.processed_img_dir / img_name
-                rendered_paths = _render_code_images(code_lines, img_path)
-                for part_index, rendered_path in enumerate(rendered_paths, start=1):
-                    p = doc.add_paragraph()
-                    _apply_body_paragraph_format(p, indent=False)
-                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
-                    p.paragraph_format.line_spacing = 1.0
-                    p.paragraph_format.left_indent = Pt(CODE_RENDER_PARAGRAPH_LEFT_INDENT_PT)
-                    p.paragraph_format.space_before = Pt(6 if part_index == 1 else 2)
-                    p.paragraph_format.space_after = Pt(2 if part_index < len(rendered_paths) else 6)
-                    p.paragraph_format.keep_together = True
-                    run = p.add_run()
-                    with Image.open(rendered_path) as code_image:
-                        width_px, height_px = code_image.size
-                    width_mm = width_px * CODE_RENDER_MM_PER_PX
-                    height_mm = height_px * CODE_RENDER_MM_PER_PX
-                    scale = min(
-                        1.0,
-                        CODE_RENDER_MAX_DISPLAY_WIDTH_MM / max(width_mm, 1e-6),
-                        CODE_RENDER_MAX_DISPLAY_HEIGHT_MM / max(height_mm, 1e-6),
-                    )
-                    width_mm *= scale
-                    height_mm *= scale
-                    run.add_picture(str(rendered_path), width=Mm(width_mm), height=Mm(height_mm))
+                if _code_block_render_mode() == "text":
+                    _add_text_code_block(doc, code_lines)
+                else:
+                    code_block_index += 1
+                    img_name = f"codeblock_{md_path.stem}_{code_block_index}.png"
+                    img_path = SETTINGS.processed_img_dir / img_name
+                    rendered_paths = _render_code_images(code_lines, img_path)
+                    for part_index, rendered_path in enumerate(rendered_paths, start=1):
+                        p = doc.add_paragraph()
+                        _apply_body_paragraph_format(p, indent=False)
+                        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                        p.paragraph_format.line_spacing = 1.0
+                        p.paragraph_format.left_indent = Pt(CODE_RENDER_PARAGRAPH_LEFT_INDENT_PT)
+                        p.paragraph_format.space_before = Pt(6 if part_index == 1 else 2)
+                        p.paragraph_format.space_after = Pt(2 if part_index < len(rendered_paths) else 6)
+                        p.paragraph_format.keep_together = True
+                        run = p.add_run()
+                        with Image.open(rendered_path) as code_image:
+                            width_px, height_px = code_image.size
+                        width_mm = width_px * CODE_RENDER_MM_PER_PX
+                        height_mm = height_px * CODE_RENDER_MM_PER_PX
+                        scale = min(
+                            1.0,
+                            CODE_RENDER_MAX_DISPLAY_WIDTH_MM / max(width_mm, 1e-6),
+                            CODE_RENDER_MAX_DISPLAY_HEIGHT_MM / max(height_mm, 1e-6),
+                        )
+                        width_mm *= scale
+                        height_mm *= scale
+                        run.add_picture(str(rendered_path), width=Mm(width_mm), height=Mm(height_mm))
             continue
 
         m_h = HEADING_RE.match(line)
@@ -1262,37 +1562,83 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
             if md_path.name == "REFERENCES.md" and level >= 2:
                 i += 1
                 continue
+            if md_path.name == "REFERENCES.md" and inserted_reference_title and level == 1 and text == "参考文献":
+                i += 1
+                continue
             if level == 1:
+                heading_cfg = dict(_document_format().get("headings", {}).get("1", {}))
                 p = doc.add_paragraph(style="Heading 1")
                 r = p.add_run(text)
-                _set_run_rfonts(r, east_asia="SimHei", ascii_font="Times New Roman")
+                _set_run_rfonts(r, east_asia=str(heading_cfg.get("font_cn", "SimHei")), ascii_font=str(heading_cfg.get("font_en", "Times New Roman")))
+                _set_run_color_black(r)
                 if _is_center_title(text):
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             elif level == 2:
+                heading_cfg = dict(_document_format().get("headings", {}).get("2", {}))
                 p = doc.add_paragraph(style="Heading 2")
                 r = p.add_run(text)
-                _set_run_rfonts(r, east_asia="SimHei", ascii_font="Times New Roman")
+                _set_run_rfonts(r, east_asia=str(heading_cfg.get("font_cn", "SimHei")), ascii_font=str(heading_cfg.get("font_en", "Times New Roman")))
+                _set_run_color_black(r)
             elif level == 3:
+                heading_cfg = dict(_document_format().get("headings", {}).get("3", {}))
                 p = doc.add_paragraph(style="Heading 3")
                 r = p.add_run(text)
-                _set_run_rfonts(r, east_asia="SimHei", ascii_font="Times New Roman")
+                _set_run_rfonts(r, east_asia=str(heading_cfg.get("font_cn", "SimHei")), ascii_font=str(heading_cfg.get("font_en", "Times New Roman")))
+                _set_run_color_black(r)
             elif level == 4:
+                heading_cfg = dict(_document_format().get("headings", {}).get("4", {}))
                 p = doc.add_paragraph(style="Heading 4")
                 r = p.add_run(text)
-                _set_run_rfonts(r, east_asia="SimHei", ascii_font="Times New Roman")
+                _set_run_rfonts(r, east_asia=str(heading_cfg.get("font_cn", "SimHei")), ascii_font=str(heading_cfg.get("font_en", "Times New Roman")))
+                _set_run_color_black(r)
             else:
                 add_paragraph(text)
             i += 1
             continue
 
         if TABLE_CAPTION_RE.match(line.strip()):
-            pending_table_caption = line.strip()
+            pending_table_caption = normalize_caption_text(line.strip(), "table", _document_format())
             i += 1
             continue
 
         if FIG_CAPTION_RE.match(line.strip()):
-            s = line.strip()
+            s = normalize_caption_text(line.strip(), "figure", _document_format())
             if "。" not in s and len(s) <= 40:
+                fig_num = _extract_figure_number(s)
+                next_nonempty = _next_nonempty_line(lines, i + 1)
+                next_normalized = _normalize_markdown_image_line(next_nonempty) if next_nonempty else ""
+                prev_nonempty = _prev_nonempty_line(lines, i - 1)
+                prev_normalized = _normalize_markdown_image_line(prev_nonempty) if prev_nonempty else ""
+                prev_fig_match = FIG_RE.search(prev_normalized) if prev_normalized else None
+                prev_is_same_figure = False
+                if prev_fig_match:
+                    prev_alt = prev_fig_match.group("alt").strip()
+                    prev_num = _extract_figure_number(prev_alt) if FIG_CAPTION_RE.match(prev_alt) else None
+                    prev_is_same_figure = prev_num == fig_num
+                if fig_num and prev_is_same_figure:
+                    pending_fig_caption = None
+                    i += 1
+                    continue
+                has_followup_figure = bool(
+                    (next_nonempty and (FIG_HIDDEN_MARKER_RE.match(next_nonempty) or FIG_PLACEHOLDER_RE.match(next_nonempty)))
+                    or (next_normalized and FIG_RE.search(next_normalized))
+                )
+                if fig_num and not has_followup_figure and fig_num in SETTINGS.figure_map:
+                    cap_text, src = SETTINGS.figure_map[fig_num]
+                    if _caption_mentions_figure(s, fig_num):
+                        cap_text = s
+                    processed = _process_image(src)
+                    fig = FigureItem(caption=cap_text, source_path=src, processed_path=processed)
+                    _add_image_with_caption(doc, fig)
+                    figures.append(fig)
+                    pending_fig_caption = None
+                    i += 1
+                    continue
+                if fig_num and not has_followup_figure:
+                    add_paragraph(s)
+                    pending_fig_caption = None
+                    i += 1
+                    continue
                 pending_fig_caption = s
                 i += 1
                 continue
@@ -1306,7 +1652,7 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
             for fig_num in fig_nums:
                 if fig_num in SETTINGS.figure_map:
                     cap_text, src = SETTINGS.figure_map[fig_num]
-                    if pending_fig_caption and fig_num in pending_fig_caption:
+                    if _caption_mentions_figure(pending_fig_caption, fig_num):
                         cap_text = pending_fig_caption
                     processed = _process_image(src)
                     fig = FigureItem(caption=cap_text, source_path=src, processed_path=processed)
@@ -1317,9 +1663,9 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
                     missing.append(fig_num)
             pending_fig_caption = None
             if not inserted_any:
-                add_paragraph(line.strip())
+                add_paragraph(normalize_inline_reference_text(line.strip(), _document_format()))
             elif missing:
-                remain = "、".join([f"图{n}" for n in missing])
+                remain = "、".join([f"图{normalize_internal_figure_number(n).replace('.', '-') if _document_format().get('numbering', {}).get('figure') == 'hyphen' else normalize_internal_figure_number(n)}" for n in missing])
                 add_paragraph(f"（配图占位，终稿插入{remain}）")
             i += 1
             continue
@@ -1330,12 +1676,16 @@ def _parse_md_and_add(doc: Document, md_path: Path, figures: list[FigureItem], p
             alt = m_fig.group("alt").strip()
             rel = m_fig.group("path").strip()
             src = _resolve_markdown_image_source(md_path, rel)
+            cap_override, src_override = _resolve_numbered_figure_override(src, alt, pending_fig_caption)
+            if src_override is not None:
+                src = src_override
             processed = _process_image(src)
-            cap = alt if FIG_CAPTION_RE.match(alt) else alt
+            cap = cap_override or (pending_fig_caption.strip() if pending_fig_caption else alt)
             show_caption = not _is_code_screenshot_image(src, alt)
             fig = FigureItem(caption=cap, source_path=src, processed_path=processed, show_caption=show_caption)
             _add_image_with_caption(doc, fig)
             figures.append(fig)
+            pending_fig_caption = None
             i += 1
             continue
 
@@ -1421,11 +1771,10 @@ def build():
 
     _add_title(doc, "摘  要", font="SimHei", bold=False, style="Heading 1")
     cn = _read_abstract_file(SETTINGS.input_dir / SETTINGS.abstract_cn_file)
-    cn_body = cn[0] if cn else "（请在此处填写中文摘要正文，行间距固定23磅。）"
+    cn_body = cn[0] if cn else f"（请在此处填写中文摘要正文，行间距固定{int(_line_spacing_pt())}磅。）"
     cn_kw = cn[1] if cn and cn[1] else SETTINGS.default_keywords_cn
-    p = doc.add_paragraph(cn_body)
-    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    p = doc.add_paragraph(normalize_inline_reference_text(cn_body, _document_format()))
+    _apply_body_paragraph_format(p, indent=True)
     _add_keywords_cn(doc, cn_kw)
     _add_page_break(doc)
     page_state["page"] += 1
@@ -1435,8 +1784,7 @@ def build():
     en_body = en[0] if en else "(Fill in the English abstract here.)"
     en_kw = en[1] if en and en[1] else SETTINGS.default_keywords_en
     p = doc.add_paragraph(en_body)
-    p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-    p.paragraph_format.line_spacing = Pt(LINE_SPACING_PT)
+    _apply_body_paragraph_format(p, indent=True)
     _add_keywords_en(doc, en_kw)
     _add_page_break(doc)
     page_state["page"] += 1
@@ -1458,6 +1806,7 @@ def build():
             page_state["page"] += 1
 
     _configure_page_number_footers(doc)
+    _apply_header_footer(doc)
 
     out_docx = SETTINGS.output_docx
     try:

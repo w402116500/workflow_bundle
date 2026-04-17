@@ -57,7 +57,7 @@ CLI：
 - 合约/链上职责
 - 部署与测试要点
 - 图、表、测试截图、附录索引等论文资产
-- 代码证据包，包括真实代码片段与白底黑字代码截图
+- 代码证据包，包括真实代码片段与白底黑字代码截图；最终论文可按 workspace 配置选择图片式或文字式代码块导出
 - 缺失项与推断项
 
 CLI：
@@ -103,7 +103,7 @@ CLI：
 - `python3 workflow_bundle/tools/cli.py prepare-writing --config <workspace.json>` 可在材料抽取或 profile 更新后重复执行；当前版本会保留 `chapter_queue.json` 中已有的写作进度。
 - `python3 workflow_bundle/tools/cli.py prepare-chapter --config <workspace.json> --chapter <chapter-file>` 用于按单章刷新 packet，不会回退章节状态。
 - `python3 workflow_bundle/tools/cli.py start-chapter --config <workspace.json> --chapter <chapter-file>` 会在 `prepare-chapter` 基础上额外生成一个 `*.start.md` 开写 brief，便于直接进入写章。
-- 对第 5 章，推荐先执行 `extract-code` 或直接执行 `extract`，确保代码片段和代码截图已经入库到工作区，再执行 `prepare-chapter`。
+- 对第 5 章，推荐先执行 `extract-code` 或直接执行 `extract`，确保代码片段和代码截图已经入库到工作区，再执行 `prepare-chapter`；若希望论文中源码以文字直出，可在 `document_format.code_blocks.render_mode` 中切到 `text`。
 
 ### 2.5 发布构建
 
@@ -122,7 +122,7 @@ CLI：
 - 引用锚点是否完整
 - 图题、表题、标题层级是否正常
 - 章节是否包含 packet 要求的图表/结构化条目，避免退化成纯叙述稿
-- 第 5 章是否同时包含后端实现、前端实现和真实代码截图
+- 第 5 章是否同时包含后端实现、前端实现和真实代码证据；若 workspace 开启 `code_blocks.render_mode=text`，最终 DOCX 中应为文字代码块而非截图
 - 交付件是否属于 Linux 交付版还是 Windows 终稿
 
 推荐入口：

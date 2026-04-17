@@ -65,6 +65,13 @@
       "REFERENCES.md"
     ]
   },
+  "document_format": {
+    "profile": "legacy",
+    "code_blocks": {
+      "render_mode": "image",
+      "text_style": "plain-paper"
+    }
+  },
   "defaults": {
     "keywords_cn": "FISCO BCOS；区块链；健康档案；访问控制；存证审计",
     "keywords_en": "FISCO BCOS; blockchain; health record; access control; notarization and audit"

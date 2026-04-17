@@ -143,8 +143,8 @@
 
 - 开写前优先保证已执行 `extract-code` 或 `extract`
 - 必须优先消费 `code_evidence_pack.json`、`code_snippets/` 与 `code_screenshots/`
-- 必须按模块合同写出后端实现、前端实现和白底黑字真实代码截图，不允许回退成纯文字实现章
-- 代码截图必须内嵌到对应子功能的后端或前端实现段内，不得再单独拆出 `5.x.4 关键代码截图` 一类小节
+- 必须按模块合同写出后端实现、前端实现和真实代码证据；若 workspace 设为 `document_format.code_blocks.render_mode=text`，最终 DOCX 应直接输出文字代码块
+- 代码截图仅作为可选证据形式，若使用，必须内嵌到对应子功能的后端或前端实现段内，不得再单独拆出 `5.x.4 关键代码截图` 一类小节
 
 ### 图资源
 

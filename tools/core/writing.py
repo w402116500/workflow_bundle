@@ -1859,8 +1859,9 @@ def _chapter_packet(
                 "Backend paragraphs should focus on interface orchestration, role checks, database persistence, and chain interaction when applicable; frontend paragraphs should focus on page entry, form/list interaction, state feedback, and route flow.\n",
                 "Do not let chapter 5 drift into a pure development chronology such as 'first backend, then frontend, then interface联调'; present the implementation as completed business capabilities.\n",
                 "Prefer direct fenced code blocks inside the matching backend/frontend paragraphs instead of a separate code screenshot subsection.\n",
-                "If code screenshots are used, insert them immediately after the matching backend or frontend code block inside that same subfunction; do not create a standalone `关键代码截图` subsection.\n",
-                "Code screenshots in chapter 5 are inline implementation evidence only; do not assign figure numbers, `图5.x` captions, or separate caption paragraphs to them.\n",
+                "If the workspace sets `document_format.code_blocks.render_mode=text`, the final DOCX will export fenced code blocks as selectable text instead of screenshot images.\n",
+                "If code screenshots are used, treat them as optional evidence only, insert them immediately after the matching backend or frontend code block inside that same subfunction, and do not create a standalone `关键代码截图` subsection.\n",
+                "Code screenshots in chapter 5 are optional inline implementation evidence only; do not assign figure numbers, `图5.x` captions, or separate caption paragraphs to them.\n",
                 "When real page screenshots are available, place them in the frontend implementation part of the matching subfunction instead of using code screenshots.\n",
                 "Do not invent code blocks. Only use the extracted snippet and staged page-image assets already available in the workspace.\n",
                 "The chapter closing paragraph should summarize the implemented business capabilities and their support for subsequent system testing, rather than repeating the section list.\n",
@@ -1896,14 +1897,13 @@ def _chapter_packet(
             [
                 "For chapter 4, write it as a system-design chapter with a clear sequence: architecture -> modules -> database -> blockchain/chaincode -> business flows -> security/privacy.\n",
                 "Keep every required figure and table marker literally in the manuscript, using the required output markers as the visible captions even when the staged asset title is a draft label such as '草案'.\n",
-                "Section 4.2.1 must keep Table 4.1 as a real module-to-design mapping table before the explanatory paragraph; do not replace it with only narrative text.\n",
-                "For section 4.3.3, if the packet includes database table structure assets such as 表4.2-1 or 表4.2-2, render them as field-level data dictionary tables rather than collapsing them into a three-column summary matrix.\n",
-                "The database structure tables in section 4.3.3 must keep the exact six-column header pattern: 字段名, 类型, 长度, 允许为空, 是否为主键, 字段描述.\n",
-                "Do not replace Table 4.1, Table 4.2-*, Table 4.3, or Table 4.4 with generic descriptive paragraphs; when table specs are provided, render their title, headers, and rows directly from the packet data.\n",
+                "In section 4.3.3, keep the packet-provided database summary table as a real markdown table before the explanatory paragraph.\n",
+                "Do not invent extra design tables such as module-mapping tables, field-level data dictionaries, or risk-summary tables when the packet does not actually provide them.\n",
+                "When table specs are provided for chapter 4, render their title, headers, and rows directly from the packet data instead of paraphrasing them into prose.\n",
                 "In the design chapter, emphasize structural decisions, data boundaries, and inter-module coordination, rather than repeating implementation details or test conclusions.\n",
                 "For each flow subsection in 4.5, keep the flow diagram caption in place and explain the business trigger, backend coordination, and chain-side effect in that order.\n",
-                "Section 4.6.2 must keep Table 4.4 as a risk-mechanism-location summary table before the analytical paragraph.\n",
                 "For section 4.6, summarize risks and matching protection mechanisms in a design-oriented tone instead of writing it as a testing or operational checklist.\n",
+                "If section 4.6 has no staged security table asset, keep the section prose-only or use an explicit placeholder rather than inventing a new table.\n",
                 "The chapter closing paragraph should summarize the overall design basis for the implementation chapter, not repeat the full chapter outline.\n",
             ]
         )
@@ -2033,7 +2033,7 @@ def _brief_style_rules(chapter: str, research_contract: dict[str, Any]) -> list[
         rules.extend(
             [
                 "第 4 章按“架构 -> 模块 -> 数据库 -> 区块链/链码 -> 业务流程 -> 安全设计”的顺序展开。",
-                "4.3.3 的数据表应保持字段级数据字典写法，不要压缩成概述表。",
+                "4.3.3 应先保留 packet 提供的结构化表格，再补设计解释；若 packet 未提供字段级数据字典资产，不得自行扩写为虚构字段表。",
                 "4.5 业务流程小节应先写触发条件，再写后端协同与链上效果。",
             ]
         )
@@ -2042,8 +2042,9 @@ def _brief_style_rules(chapter: str, research_contract: dict[str, Any]) -> list[
             [
                 "第 5 章按业务模块组织，而不是按前端/后端开发顺序组织。",
                 "每个模块先写业务职责，再写子功能实现，代码应直接嵌入对应子功能，不单独拆代码截图小节。",
-                "若使用代码截图，必须紧跟在对应的后端或前端代码块之后插入，不能单独生成“关键代码截图”小节。",
-                "代码截图仅作为实现证据插图使用，不编号，不写“图5.x”题注，也不单独形成图题段落。",
+                "若 workspace 配置 `document_format.code_blocks.render_mode=text`，最终 DOCX 中的 fenced code block 应直接按文字代码块导出，而不是转成图片。",
+                "若使用代码截图，只能作为可选实现证据，并且必须紧跟在对应的后端或前端代码块之后插入，不能单独生成“关键代码截图”小节。",
+                "代码截图仅作为可选实现证据插图使用，不编号，不写“图5.x”题注，也不单独形成图题段落。",
                 "每个子功能小节都必须同时出现“后端实现。”和“前端实现。”两段，顺序固定为后端在前、前端在后。",
                 "后端段落应落到接口、服务编排、角色校验、数据库写入和链上协同；前端段落应落到页面入口、表单/列表交互、状态反馈和路由跳转。",
                 "优先直接嵌入工作区已抽取的真实代码片段；若存在真实页面截图，应放在对应前端实现段落之后。",
@@ -2719,9 +2720,12 @@ def run_start_chapter(config_path: Path, chapter: str) -> dict[str, Path]:
 def _format_references_md(registry: dict[str, Any]) -> str:
     used_entries = [entry for entry in registry.get("entries", []) if entry.get("used_by")]
     used_entries.sort(key=lambda item: item["id"])
+    lines = ["# 参考文献", ""]
     if not used_entries:
-        return "[1] 待补正式参考文献。\n"
-    return "\n".join(_render_reference_text(entry) for entry in used_entries) + "\n"
+        lines.append("[1] 待补正式参考文献。")
+        return "\n".join(lines) + "\n"
+    lines.extend(_render_reference_text(entry) for entry in used_entries)
+    return "\n".join(lines) + "\n"
 
 
 def _collect_placeholders(text: str) -> list[str]:

@@ -51,6 +51,7 @@
    - 若要替换 `prepare-figures` 的内置图号，必须在 `ai_figure_specs` 中为对应图号显式设置 `override_builtin=true`，并在发布前先运行一次 `prepare-ai-figures`。
    - 当前 workflow 默认走 `zetatechs-gemini` provider；若执行环境需要回退到 OpenAI Image 兼容链，应显式把 `image_generation.provider` 改为 `zetatechs` 或 `zetatechs-openai-image`。
    - 最好为每张 AI 图补充 `diagram_type` 和 `style_notes`，并参考 `docs/THESIS_DIAGRAMS_LIST.md` 与 `docs/images/` 中的论文技术图风格来写提示，而不是只写一句笼统的图意描述。
+   - 若某张图需要“提示词 + 参考图”一起送入模型，可在 `ai_figure_specs.<fig>.reference_images` 中声明参考 PNG/JPG；当前只有 `zetatechs-gemini` provider 会真正把参考图作为多模态输入发送。
    - AI 图本体只能保留图主体，不能在 PNG 内重复写图号、图题、章节名、页眉页脚、`Fig.` / `Figure` 或边缘装饰标签；题注由正文和 DOCX 排版层负责。
    - 若某张 AI 图因额度不足、质量不稳定或不适合论文风格而失败，不要硬撑整批命令；可把该图号的 `ai_figure_specs.<fig>.enabled` 改为 `false`，再执行 `prepare-figures`，让这一张图单独回退到确定性生成。
 
@@ -132,7 +133,7 @@ chapter_file: <例如 05-系统实现.md>
 2. 如果 workflow_signature_status 是 drifted，先 sync-workflow-assets，再重新 resume。
 3. 先读 docs/writing/chapter_briefs/<chapter_file>，只有必要时再读 chapter_packets。
 4. 写作必须以 polished_v3/<chapter_file> 为正文真源。
-5. 第 5 章必须优先使用 code_evidence_pack、代码片段和白底黑字代码截图，且代码截图只能内嵌到对应子功能段内，不能另起“关键代码截图”小节。
+5. 第 5 章必须优先使用 code_evidence_pack 与已抽取的真实代码片段；若 workspace 配置了 `document_format.code_blocks.render_mode=text`，最终 DOCX 应输出文字代码块。代码截图仅作为可选证据形式，且只能内嵌到对应子功能段内，不能另起“关键代码截图”小节。
 6. 第 6 章必须优先使用测试证据，不要把规划和设计文档当测试结论。
 7. 完成原稿后，调用 $academic-paper-crafter 进行学术化润色，再 finalize-chapter 到 polished。
 8. 引用保持顺序编号，避免一处连续堆叠多条引用。
@@ -222,6 +223,10 @@ figures:
     caption: <图题>
     intent: <图像意图>
     override_builtin: <true|false>
+    reference_images:
+      - path: <可选，本地参考图路径>
+        role: <可选，例如 style_layout/content_structure>
+        note: <可选，告诉模型这张图只参考什么>
 
 要求：
 1. 使用 workflow_bundle/tools/cli.py 作为正式入口。

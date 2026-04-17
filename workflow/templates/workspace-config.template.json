@@ -65,10 +65,22 @@
       "REFERENCES.md"
     ]
   },
+  "document_format": {
+    "profile": "legacy",
+    "code_blocks": {
+      "render_mode": "image",
+      "text_style": "plain-paper"
+    }
+  },
   "postprocess": {
     "final_dir": "final",
     "output_docx": "论文输出_windows_final.docx",
-    "figure_log": "figure_insert_log_final.csv"
+    "figure_log": "figure_insert_log_final.csv",
+    "windows_bridge": {
+      "enabled": true,
+      "powershell_exe": "powershell.exe",
+      "python_launcher": "py"
+    }
   },
   "defaults": {
     "keywords_cn": "请替换为中文关键词",

@@ -14,10 +14,10 @@ CHAIN_LABELS = {
     "fabric": "Hyperledger Fabric",
 }
 
-MATERIAL_PACK_SCHEMA_VERSION = 8
-PROJECT_PROFILE_SCHEMA_VERSION = 15
-CHAPTER_PACKET_SCHEMA_VERSION = 12
-CODE_EVIDENCE_SCHEMA_VERSION = 2
+MATERIAL_PACK_SCHEMA_VERSION = 10
+PROJECT_PROFILE_SCHEMA_VERSION = 16
+CHAPTER_PACKET_SCHEMA_VERSION = 13
+CODE_EVIDENCE_SCHEMA_VERSION = 3
 
 ASSET_BUCKET_ORDER = [
     "figures",
@@ -188,10 +188,18 @@ def build_workspace_config(project_root: Path, title: str, workspace_root: Path,
             "abstract_en_file": "00-Abstract.md",
             "chapter_order": list(DEFAULT_CHAPTER_ORDER),
         },
+        "document_format": {
+            "profile": "legacy",
+        },
         "postprocess": {
             "final_dir": "final",
             "output_docx": f"{slugify_name(title)}_windows_final.docx",
             "figure_log": "figure_insert_log_final.csv",
+            "windows_bridge": {
+                "enabled": True,
+                "powershell_exe": "powershell.exe",
+                "python_launcher": "py",
+            },
         },
         "defaults": {
             "keywords_cn": DEFAULT_KEYWORDS_CN if chain_platform == "fisco" else f"{chain_label}；区块链；系统设计；系统实现；论文工作流",
