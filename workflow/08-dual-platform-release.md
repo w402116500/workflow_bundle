@@ -91,7 +91,7 @@ Windows 路径适合完成：
 
 推荐额外准备一个 Windows 盘符映射目录，例如：
 
-- `/mnt/e/myproject/wurenji_work`
+- `/mnt/<drive>/workspace_probe`
 
 建议：
 
@@ -100,12 +100,12 @@ Windows 路径适合完成：
 - 需要给 PowerShell 传路径时，统一先执行 `wslpath -w <path>`
 - PowerShell 单次命令涉及中文输出时，先设置 UTF-8 控制台编码，避免 `参考文献`、图题等中文字段乱码
 
-已验证样例：
+推荐的 probe 目录形态：
 
-- WSL 路径：`/mnt/e/myproject/wurenji_work/win_release_probe`
-- Windows 路径：`E:\\myproject\\wurenji_work\\win_release_probe`
+- WSL 路径：`/mnt/<drive>/workspace_probe/win_release_probe`
+- Windows 路径：`<DRIVE>:\\workspace_probe\\win_release_probe`
 
-该样例已成功完成 Word 终排，并验证：
+建议至少核对以下结果：
 
 - `参考文献` 标题存在
 - `图5-1` 等连字符编号保留正确

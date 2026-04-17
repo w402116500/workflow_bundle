@@ -1,50 +1,45 @@
 {
-  "project_id": "health-record-fisco-demo",
-  "title": "基于FISCO BCOS的健康档案系统设计与实现",
-  "discipline": "区块链工程",
+  "project_id": "fabric-trace-demo",
+  "title": "基于 Hyperledger Fabric 的追溯系统示例",
+  "discipline": "计算机类",
   "project_type": "blockchain-fullstack",
-  "project_root": "/home/ub/thesis_materials",
-  "chain_platform": "fisco",
-  "detection_confidence": "high",
+  "project_root": "workflow/fixtures/fabric_trace_demo",
+  "chain_platform": "fabric",
+  "detection_confidence": "example",
   "source_of_truth": {
     "thesis": "polished_v3",
-    "evidence_docs": "docs/materials",
-    "evidence_code": "/home/ub/thesis_materials",
+    "evidence_docs": "docs",
+    "evidence_code": "workflow/fixtures/fabric_trace_demo",
     "generated_output": "word_output"
   },
   "source_paths": {
-    "frontend": "code/frontend",
-    "backend": "code/backend",
-    "contracts": "code/contracts",
-    "chaincode": "",
-    "database": "code/sql/init.sql",
+    "frontend": "",
+    "backend": "",
+    "contracts": "",
+    "chaincode": "chaincode-go/trace_contract.go",
+    "database": "sql/init.sql",
     "ops_docs": "README.md",
     "overview_docs": "docs"
   },
   "document_paths": {
     "requirements": [
-      "docs/THESIS_REQUIREMENTS.md",
-      "docs/REQUIREMENTS_ANALYSIS.md"
+      "docs/requirements.md"
     ],
     "design": [
-      "docs/DATA_AND_CONTRACT_DESIGN.md",
-      "docs/BACKEND_PLAN.md",
-      "docs/FRONTEND_PLAN.md",
-      "docs/THESIS_DIAGRAMS_LIST.md"
+      "docs/design.md"
     ],
-    "references": [
-      "docs/REFERENCES.md"
-    ],
-    "writing_rules": [
-      "docs/THESIS_WRITING_GUIDE.md",
-      "THESIS_WRITING_PLAN.md"
-    ]
+    "references": [],
+    "writing_rules": []
   },
   "detected_stack": {
-    "frontend_framework": "vue",
-    "backend_framework": "spring-boot",
+    "frontend_framework": "unknown",
+    "backend_framework": "unknown",
     "database_kind": "mysql",
-    "chain_sdk": "fisco-java-sdk"
+    "chain_sdk": "fabric-gateway"
   },
-  "missing_inputs": []
+  "missing_inputs": [
+    "frontend source tree",
+    "backend service source tree",
+    "reference bibliography"
+  ]
 }

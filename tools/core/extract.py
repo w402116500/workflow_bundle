@@ -2715,25 +2715,65 @@ def _build_test_assets(
             ],
         ]
     else:
+        backend_env_bits = [backend_framework or "待根据后端实现补充"]
+        if backend_port:
+            backend_env_bits.append(f"后端默认端口 {backend_port}")
+        if database_label:
+            backend_env_bits.append(f"数据库 {database_label}")
+        else:
+            backend_env_bits.append("数据库待根据环境补充")
+
+        frontend_env_bits = [frontend_stack or "待根据前端实现补充"]
+        if frontend_url:
+            frontend_env_bits.append(f"前端入口 {frontend_url}")
+        elif frontend_port:
+            frontend_env_bits.append(f"前端默认端口 {frontend_port}")
+        else:
+            frontend_env_bits.append("前端入口待根据当前测试环境补充")
+        route_hints = []
+        for route in ["/admin", "/trace"]:
+            if route in f"{frontend_text} {overall_text}":
+                route_hints.append(route)
+        if route_hints:
+            frontend_env_bits.append(f"常见入口 {'、'.join(route_hints)}")
+
+        chain_env_bits = [chain_platform or "待根据链网环境补充", f"链交互组件 {chain_sdk or '待补充'}"]
+        if chaincode_name:
+            chain_env_bits.append(f"链码 {chaincode_name}")
+        if fabric_network:
+            chain_env_bits.append(f"网络 {fabric_network}")
+
+        test_env_bits = []
+        if manual_test_path:
+            test_env_bits.append("手动全流程文档")
+        if frontend_test_path:
+            test_env_bits.append("前端测试文档")
+        if backend_report_path:
+            test_env_bits.append("后端测试报告")
+        if screenshot_dir or frontend_test_path:
+            test_env_bits.append("页面截图取证")
+        if not test_env_bits:
+            test_env_bits.append("待根据测试证据补充")
+
         env_rows = [
             [
                 "服务端与链下数据",
-                "Gin + GORM + MySQL；后端默认端口 8050；数据库为本地 teatrace。",
+                "；".join(backend_env_bits) + "。",
                 _join_source_paths(backend_report_path, start_doc_path, overall_doc_path),
             ],
             [
                 "客户端与交互入口",
-                "Vue 3 + Ant Design Vue；前端默认端口 5180；支持 /admin 与 /trace 两类入口。",
+                "；".join(frontend_env_bits) + "。",
                 _join_source_paths(frontend_test_path, start_doc_path, overall_doc_path),
             ],
             [
                 "区块链与链码环境",
-                "Hyperledger Fabric 2.4.9；链码名 theatrace；依赖 ../test-network 完成部署与 InitLedger。",
+                "；".join(chain_env_bits) + "。",
                 _join_source_paths(deploy_doc_path, overall_doc_path),
             ],
             [
                 "测试执行方式",
-                "手动全流程文档 + full_flow_test.py + Backend TEST_REPORT + 页面截图取证。",
+                " + ".join(test_env_bits) + "。",
                 _join_source_paths(manual_test_path, frontend_test_path, backend_report_path),
             ],
         ]

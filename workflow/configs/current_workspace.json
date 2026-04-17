@@ -1,5 +1,5 @@
 {
-  "workspace_name": "health-record-fisco-demo",
+  "workspace_name": "fabric-trace-demo-sample",
   "workspace_root": "../..",
   "project_manifest": "workflow/configs/current_project_manifest.json",
   "materials": {
@@ -47,8 +47,8 @@
     "input_dir": "polished_v3",
     "diagram_dir": "docs/images",
     "output_dir": "word_output",
-    "output_docx": "论文_润色版_规范排版_含配图_v29.docx",
-    "figure_log": "figure_insert_log_v29.csv",
+    "output_docx": "sample_fabric_trace_thesis.docx",
+    "figure_log": "figure_insert_log.csv",
     "processed_image_dir": "processed_images",
     "reference_file": "REFERENCES.md",
     "abstract_cn_file": "00-摘要.md",
@@ -72,45 +72,45 @@
       "text_style": "plain-paper"
     }
   },
-  "defaults": {
-    "keywords_cn": "FISCO BCOS；区块链；健康档案；访问控制；存证审计",
-    "keywords_en": "FISCO BCOS; blockchain; health record; access control; notarization and audit"
-  },
-  "er_figure_specs": {},
-  "figure_map": {
-    "3.1": {
-      "caption": "图3.1 系统用例图",
-      "path": "docs/images/image.png"
-    },
-    "4.1": {
-      "caption": "图4.1 系统总体架构图",
-      "path": "docs/images/image-5.png"
-    },
-    "4.2": {
-      "caption": "图4.2 数据库E-R图",
-      "path": "docs/images/image-4.png"
-    },
-    "4.3": {
-      "caption": "图4.3 上传确认链上存证流程图",
-      "path": "docs/images/image-2.png"
-    },
-    "4.4": {
-      "caption": "图4.4 授权撤销权限校验流程图",
-      "path": "docs/images/image-6.png"
-    },
-    "4.5": {
-      "caption": "图4.5 带权限查询与审计追溯流程图",
-      "path": "docs/images/image-3.png"
-    },
-    "5.1": {
-      "caption": "图5.1 系统功能结构图",
-      "path": "docs/images/image-1.png"
+  "postprocess": {
+    "final_dir": "final",
+    "output_docx": "sample_fabric_trace_thesis_windows_final.docx",
+    "figure_log": "figure_insert_log_final.csv",
+    "windows_bridge": {
+      "enabled": true,
+      "powershell_exe": "powershell.exe",
+      "python_launcher": "py"
     }
   },
+  "defaults": {
+    "keywords_cn": "Hyperledger Fabric；区块链追溯；链码；论文工作流；系统设计",
+    "keywords_en": "Hyperledger Fabric; blockchain traceability; chaincode; thesis workflow; system design"
+  },
+  "image_generation": {
+    "enabled": false,
+    "provider": "zetatechs-gemini",
+    "base_url": "https://api.zetatechs.com",
+    "api_key_env": "NEWAPI_API_KEY",
+    "default_model": "gemini-3.1-flash-image-preview",
+    "default_quality": "high",
+    "default_size": "1536x1024",
+    "response_format": "b64_json",
+    "gemini_image_size": "1K",
+    "gemini_response_modalities": [
+      "IMAGE",
+      "TEXT"
+    ],
+    "timeout_sec": 300,
+    "output_dir": "docs/images/generated_ai",
+    "auto_generate_on_prepare_figures": false
+  },
+  "ai_figure_specs": {},
+  "er_figure_specs": {},
+  "figure_map": {},
   "metadata": {
-    "project_root": "/home/ub/thesis_materials",
-    "title": "基于FISCO BCOS的健康档案系统设计与实现",
-    "discipline": "区块链工程",
-    "chain_platform": "fisco"
+    "project_root": "workflow/fixtures/fabric_trace_demo",
+    "title": "基于 Hyperledger Fabric 的追溯系统示例",
+    "discipline": "计算机类",
+    "chain_platform": "fabric"
   }
 }

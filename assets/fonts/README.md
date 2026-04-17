@@ -4,7 +4,7 @@ This directory stores fonts that are vendored into the thesis workflow so code s
 
 ### SiYuan HeiTi / Source Han Sans SC
 
-- Source: user-provided archive `/home/ub/thesis_materials/SiYuanHeiTi-Regular.zip`
+- Source: user-provided archive `SiYuanHeiTi-Regular.zip`
 - Included files:
   - `siyuan-heiti/SourceHanSansSC-Regular-2.otf`
 
