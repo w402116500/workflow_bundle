@@ -226,7 +226,6 @@
     - 明确 `ER` 图通常继续走 `er_figure_specs + dbdia-er`
     - 新增传统分层架构图、传统流程图、传统系统功能结构图模板
   - 更新 `workflow/configs/current_workspace.json` 与 `workflow/templates/workspace-config.template.json`，新增稳定 guide source 的官方示例写法。
-  - 将本轮本地发版草稿收口为正式 minor 版本 `0.6.0`，并以新的 release note 重新归档。
 - Validation:
   - `python3 -m py_compile tools/core/reference_guides.py tools/core/selftest.py tools/cli.py`
   - `python3 tools/cli.py prepare-reference-guides --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --dry-run`
@@ -240,6 +239,35 @@
   - `python3 tools/cli.py release-preflight --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json`
   - `python3 tools/cli.py selftest`
   - `git diff --check`
+
+## 2026-04-18 (workspace mutation hard isolation)
+
+- Purpose: 把“新项目不要把配置和运行时状态混回公共 bundle”从约定升级为正式 CLI 硬约束，避免用户继续在 `current_workspace.json` 或 bundle 内 workspace 上执行变更型命令。
+- Changes:
+  - 更新 `tools/core/runtime_state.py`，新增 `workspace_mutation_safety` / `ensure_workspace_mutation_allowed`，并将以下条件统一判定为 blocked：
+    - 配置文件为 `workflow/configs/current_workspace.json`
+    - manifest 为 `workflow/configs/current_project_manifest.json`
+    - `workspace_root` 仍落在 `workflow_bundle/` 仓库内
+  - 将 `set-active-workspace`、`refresh-handoff`、`clear-lock` 以及所有走 workspace lock 的变更型命令接入统一阻断逻辑。
+  - 更新 `tools/core/workspace_checks.py` 与 `tools/core/runtime_state.py` 的 handoff/resume 输出，显式暴露：
+    - `workspace_mutation_safety`
+    - `workspace_mutation_reason_codes`
+    - 下一步应先执行 `intake` 创建独立 workspace
+  - 更新 `tools/core/selftest.py`，新增 bundle 示例配置只读回归：
+    - `resume` 可读但显示 blocked
+    - `set-active-workspace` / `extract` 被直接拒绝
+    - `check-workspace` 会把 mutation blocking 作为阻塞项输出
+  - 更新 `workflow/README.md`、`workflow/MIGRATION.md`、`workflow/WORKSPACE_SPEC.md`、`workflow/references/command-map.md` 与 `workflow/07-current-project-execution-checklist.md`，把示例配置只读化与 in-repo workspace 阻断写入正式文档。
+  - 更新 `.gitignore`，忽略 bundle 根目录 `docs/workflow/` 运行时状态产物，避免 handoff/execution log 被误纳入公开仓库。
+- Validation:
+  - `python3 -m py_compile tools/core/runtime_state.py tools/core/workspace_checks.py tools/cli.py tools/core/selftest.py`
+  - `git diff --check`
+  - `python3 tools/cli.py resume --config workflow/configs/current_workspace.json`
+  - `python3 tools/cli.py set-active-workspace --config workflow/configs/current_workspace.json`
+  - `python3 tools/cli.py extract --config workflow/configs/current_workspace.json`
+  - `python3 tools/cli.py check-workspace --config workflow/configs/current_workspace.json`
+  - `bash workflow/scripts/sync_root_compat.sh`
+  - `python3 tools/cli.py selftest`
 
 ## 2026-04-18 (version tag-existence clarification)
 

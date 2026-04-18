@@ -27,6 +27,7 @@ else:
     PRIMARY_WORKFLOW_ROOT = THIS_ROOT / "workflow_bundle" if (THIS_ROOT / "workflow_bundle").exists() else THIS_ROOT
 
 FIXTURE_PROJECT_ROOT = PRIMARY_WORKFLOW_ROOT / "workflow" / "fixtures" / "fabric_trace_demo"
+CURRENT_WORKSPACE_EXAMPLE_CONFIG = PRIMARY_WORKFLOW_ROOT / "workflow" / "configs" / "current_workspace.json"
 SELFTEST_DOCX_NAME = "selftest_release.docx"
 CHAPTER5_BRIEF_EXPECTED = [
     "代码截图仅作为可选实现证据插图使用，不编号，不写“图5.x”题注，也不单独形成图题段落。",
@@ -253,6 +254,127 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
         _require(config_path.exists(), f"fixture workspace config missing: {config_path}")
         material_pack_path = fixture_workspace / "docs" / "materials" / "material_pack.json"
         _require(material_pack_path.exists(), f"fixture material pack missing: {material_pack_path}")
+
+        resume_example_cmd = [
+            sys.executable,
+            str(cli_path),
+            "resume",
+            "--config",
+            str(CURRENT_WORKSPACE_EXAMPLE_CONFIG),
+        ]
+        resume_example_result, resume_example_stdout, _ = _run_command(
+            resume_example_cmd,
+            "01b-resume-bundle-example-readonly",
+            logs_dir,
+        )
+        stage["commands"].append(resume_example_result)
+        for label, ok, actual in (
+            ("bundle_example_resume_status", resume_example_result["returncode"] == 0, resume_example_result["returncode"]),
+            (
+                "bundle_example_resume_mutation_safety",
+                "workspace_mutation_safety: blocked" in resume_example_stdout,
+                resume_example_stdout,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "bundle example resume did not expose readonly mutation safety")
+
+        set_active_example_cmd = [
+            sys.executable,
+            str(cli_path),
+            "set-active-workspace",
+            "--config",
+            str(CURRENT_WORKSPACE_EXAMPLE_CONFIG),
+        ]
+        set_active_example_result, _, set_active_example_stderr = _run_command(
+            set_active_example_cmd,
+            "01c-set-active-bundle-example-blocked",
+            logs_dir,
+        )
+        stage["commands"].append(set_active_example_result)
+        for label, ok, actual in (
+            ("bundle_example_set_active_blocked", set_active_example_result["returncode"] != 0, set_active_example_result["returncode"]),
+            (
+                "bundle_example_set_active_reason",
+                "`set-active-workspace` is blocked" in set_active_example_stderr,
+                set_active_example_stderr,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "bundle example set-active-workspace was not blocked")
+
+        resolve_active_cmd = [
+            sys.executable,
+            str(cli_path),
+            "resolve-active-workspace",
+            "--print-path",
+        ]
+        resolve_active_result, resolve_active_stdout, _ = _run_command(
+            resolve_active_cmd,
+            "01d-resolve-active-after-blocked-example",
+            logs_dir,
+        )
+        stage["commands"].append(resolve_active_result)
+        active_after_blocked = resolve_active_stdout.strip()
+        for label, ok, actual in (
+            ("active_workspace_preserved_after_blocked_set_active", resolve_active_result["returncode"] == 0, resolve_active_result["returncode"]),
+            ("active_workspace_still_fixture_after_blocked_set_active", active_after_blocked == str(config_path), active_after_blocked),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "blocked bundle example set-active-workspace altered active workspace pointer")
+
+        extract_example_cmd = [
+            sys.executable,
+            str(cli_path),
+            "extract",
+            "--config",
+            str(CURRENT_WORKSPACE_EXAMPLE_CONFIG),
+        ]
+        extract_example_result, _, extract_example_stderr = _run_command(
+            extract_example_cmd,
+            "01e-extract-bundle-example-blocked",
+            logs_dir,
+        )
+        stage["commands"].append(extract_example_result)
+        for label, ok, actual in (
+            ("bundle_example_extract_blocked", extract_example_result["returncode"] != 0, extract_example_result["returncode"]),
+            (
+                "bundle_example_extract_reason",
+                "`extract` is blocked" in extract_example_stderr,
+                extract_example_stderr,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "bundle example extract was not blocked")
+
+        check_example_cmd = [
+            sys.executable,
+            str(cli_path),
+            "check-workspace",
+            "--config",
+            str(CURRENT_WORKSPACE_EXAMPLE_CONFIG),
+        ]
+        check_example_result, check_example_stdout, _ = _run_command(
+            check_example_cmd,
+            "01f-check-workspace-bundle-example",
+            logs_dir,
+        )
+        stage["commands"].append(check_example_result)
+        for label, ok, actual in (
+            ("bundle_example_check_workspace_nonzero", check_example_result["returncode"] != 0, check_example_result["returncode"]),
+            (
+                "bundle_example_check_workspace_blocking_section",
+                "Blocking workspace mutation issues:" in check_example_stdout,
+                check_example_stdout,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "bundle example check-workspace did not report mutation blocking")
 
         material_pack = read_json(material_pack_path)
         role_tables = (

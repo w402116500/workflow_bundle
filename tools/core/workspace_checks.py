@@ -7,6 +7,7 @@ from typing import Any
 
 from core.ai_image_generation import ai_override_blocking_entries
 from core.project_common import load_workspace_context, read_json, read_text_safe, writing_output_paths
+from core.runtime_state import get_workspace_lock_status, workflow_signature_status, workspace_mutation_safety
 
 
 PACKET_SYNC_BLOCKING_STATUSES = {"stale", "legacy", "missing"}
@@ -537,6 +538,7 @@ def run_workspace_check(config_path: Path) -> dict[str, Any]:
         "resume_skill": writing_paths["resume_skill_path"],
     }
     signature = workflow_signature_status(cfg_path)
+    mutation_safety = workspace_mutation_safety(cfg_path)
     lock_status = get_workspace_lock_status(cfg_path)
 
     lines: list[str] = []
@@ -561,6 +563,7 @@ def run_workspace_check(config_path: Path) -> dict[str, Any]:
     citation_order_entries: list[dict[str, Any]] = []
     citation_reuse_entries: list[dict[str, Any]] = []
     citation_sentence_entries: list[dict[str, Any]] = []
+    workspace_mutation_blocking_entries: list[dict[str, str]] = []
     ai_figure_blocking_entries = ai_override_blocking_entries(cfg_path)
     figure_integration_blocking_entries = _figure_integration_blocking_entries(config, workspace_root, writing_paths)
     chapter5_page_screenshot_blocking_entries = _chapter5_page_screenshot_blocking_entries(config, workspace_root, writing_paths)
@@ -645,6 +648,8 @@ def run_workspace_check(config_path: Path) -> dict[str, Any]:
             "",
             "Workflow runtime:",
             f"  workflow_signature_status: {signature['status']}",
+            f"  workspace_mutation_safety: {mutation_safety['status']}",
+            f"  workspace_mutation_reason_codes: {', '.join(mutation_safety['reason_codes']) or 'none'}",
             f"  current_bundle_signature: {signature['current_signature']}",
             f"  recorded_bundle_signature: {signature['recorded_signature'] or 'none'}",
             f"  workflow_assets_state: {signature['assets_state_path']}",
@@ -659,6 +664,23 @@ def run_workspace_check(config_path: Path) -> dict[str, Any]:
             f"  packet_kind: {_summarize_counter(packet_kind_counter)}",
         ]
     )
+
+    if mutation_safety["status"] != "safe":
+        status = 1
+        workspace_mutation_blocking_entries.append(
+            {
+                "config_path": mutation_safety["config_path"],
+                "workspace_root": mutation_safety["workspace_root"],
+                "message": mutation_safety["message"],
+            }
+        )
+
+    if workspace_mutation_blocking_entries:
+        lines.extend(["", "Blocking workspace mutation issues:"])
+        for entry in workspace_mutation_blocking_entries:
+            lines.append(f"  - {entry['message']}")
+    else:
+        lines.extend(["", "Blocking workspace mutation issues:", "  - none"])
 
     if blocking_entries:
         status = 1
@@ -804,6 +826,9 @@ def run_workspace_check(config_path: Path) -> dict[str, Any]:
         "status": status,
         "lines": lines,
         "blocking_entries": blocking_entries,
+        "workspace_mutation_safety": mutation_safety["status"],
+        "workspace_mutation_reason_codes": mutation_safety["reason_codes"],
+        "workspace_mutation_blocking_entries": workspace_mutation_blocking_entries,
         "workflow_signature_status": signature["status"],
         "workflow_assets_state_path": signature["assets_state_path"],
         "workflow_assets_synced_at": signature["synced_at"],

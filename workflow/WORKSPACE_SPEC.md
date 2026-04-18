@@ -14,7 +14,7 @@
 {
   "workspace_name": "example",
   "workspace_root": "../..",
-  "project_manifest": "workflow/configs/current_project_manifest.json",
+  "project_manifest": "workflow/configs/project_manifest.json",
   "materials": {
     "material_pack_json": "docs/materials/material_pack.json",
     "material_pack_md": "docs/materials/material_pack.md",
@@ -121,6 +121,8 @@
 
 说明：
 
+- `workflow/configs/current_workspace.json` 与 `workflow/configs/current_project_manifest.json` 仅保留为 bundle 示例实例；真实项目应通过 `intake` 生成独立 workspace，并使用该 workspace 下的 `workflow/configs/workspace.json` 与 `project_manifest.json`。
+- 对示例配置或 `workspace_root` 仍落在 `workflow_bundle/` 仓库内的配置，正式 CLI 的变更型命令会直接阻断，避免把项目化修改写回公共 bundle。
 - 大章节框架固定，当前默认为摘要、绪论、技术介绍、需求分析、系统设计、系统实现、系统测试、结论与展望、致谢、参考文献。
 - 小节结构不再写死在工具代码中，而是由 `docs/writing/project_profile.json` 按项目画像动态生成。
 - `docs/materials/material_pack.json` 不只承载 `summary/evidence`，还承载结构化 `assets`，用于图表、结构化索引和测试证据抽取。

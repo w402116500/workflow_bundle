@@ -6,6 +6,7 @@ __pycache__/
 .DS_Store
 
 workflow/configs/active_workspace.json
+docs/workflow/
 
 # figure runtime cache
 vendor/dbdia/build/

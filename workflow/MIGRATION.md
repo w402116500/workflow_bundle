@@ -16,6 +16,7 @@
 - 版本号与发版状态优先使用 `python3 workflow_bundle/tools/cli.py version` 与 `VERSION`
 - 无参命令默认从 `workflow_bundle/workflow/configs/active_workspace.json` 解析当前活动工作区
 - `workflow/configs/current_workspace.json` 只保留为示例配置，不再作为当前项目默认值
+- 对 `current_workspace.json` 或 `workspace_root` 落在 `workflow_bundle/` 内的配置，变更型命令会直接阻断，避免把项目改动写回公共 bundle
 - 新项目接入使用 `intake -> extract-code -> extract -> scaffold`
 - 若 bundle 侧核心工具有更新，使用 `bash workflow_bundle/workflow/scripts/sync_root_compat.sh` 回刷 root `tools/core/` 兼容镜像
 - root `tools/*.py` launcher 与 `workflow/scripts/*.sh` wrapper 也由同一命令自动重建，不再建议手工维护

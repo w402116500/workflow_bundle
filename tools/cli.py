@@ -21,10 +21,12 @@ from core.reference_guides import run_prepare_reference_guides
 from core.release_summary import run_write_build_summary, run_write_finalization_summary, run_write_release_summary
 from core.runtime_state import (
     ACTIVE_WORKSPACE_POINTER_PATH,
+    WorkspaceMutationBlockedError,
     acquire_workspace_lock,
     append_workspace_execution_log,
     build_workspace_snapshot,
     build_resume_lines,
+    ensure_workspace_mutation_allowed,
     get_workspace_lock_status,
     read_active_workspace_pointer,
     release_workspace_lock,
@@ -598,6 +600,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "refresh-handoff":
         config_path = _resolve_config_arg(args.config)
+        ensure_workspace_mutation_allowed(config_path, "refresh-handoff")
         result = refresh_workspace_handoff(config_path, trigger="refresh-handoff", command="refresh-handoff")
         append_workspace_execution_log(config_path, "refresh-handoff", result)
         print(f"config_path: {result['config_path']}")
@@ -654,6 +657,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "clear-lock":
         config_path = _resolve_config_arg(args.config)
+        ensure_workspace_mutation_allowed(config_path, "clear-lock")
         result = release_workspace_lock(config_path, "clear-lock", force=args.force)
         _record_workspace_state(config_path, "clear-lock", {"force": args.force, **result})
         print(f"lock_path: {result['lock_path']}")
@@ -1125,4 +1129,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except WorkspaceMutationBlockedError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1)

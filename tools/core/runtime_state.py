@@ -33,6 +33,8 @@ else:
     PRIMARY_WORKFLOW_ROOT = REPO_ROOT / "workflow_bundle" if (REPO_ROOT / "workflow_bundle").exists() else REPO_ROOT
 
 ACTIVE_WORKSPACE_POINTER_PATH = PRIMARY_WORKFLOW_ROOT / "workflow" / "configs" / "active_workspace.json"
+CURRENT_WORKSPACE_EXAMPLE_PATH = PRIMARY_WORKFLOW_ROOT / "workflow" / "configs" / "current_workspace.json"
+CURRENT_PROJECT_MANIFEST_EXAMPLE_PATH = PRIMARY_WORKFLOW_ROOT / "workflow" / "configs" / "current_project_manifest.json"
 LOCK_TTL_HOURS = 2
 MANAGED_WORKFLOW_DOCS = [
     "05-draft-polished-alignment.md",
@@ -54,6 +56,10 @@ MANAGED_WORKFLOW_SKILLS = [
     "paper-research-agent",
     "paper-reader",
 ]
+
+
+class WorkspaceMutationBlockedError(RuntimeError):
+    pass
 
 
 def _now_iso() -> str:
@@ -95,6 +101,67 @@ def _path_stat(path: Path) -> dict[str, Any]:
 
 def _bundle_cli_path() -> Path:
     return PRIMARY_WORKFLOW_ROOT / "tools" / "cli.py"
+
+
+def _path_is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _workspace_mutation_block_message(safety: dict[str, Any], command: str) -> str:
+    reasons = "; ".join(str(item) for item in safety.get("reasons", []) if str(item).strip()) or "unknown reason"
+    return (
+        f"`{command}` is blocked for the current config because it points at a bundle example or an in-repo workspace.\n"
+        f"config_path: {safety['config_path']}\n"
+        f"workspace_root: {safety['workspace_root']}\n"
+        f"reasons: {reasons}\n"
+        "Use `python3 workflow_bundle/tools/cli.py intake --project-root <project-root> --title <title> --out <workspace-dir>` "
+        "to create a dedicated project workspace, then run "
+        "`python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace-dir>/workflow/configs/workspace.json>`."
+    )
+
+
+def workspace_mutation_safety(config_path: Path | None = None) -> dict[str, Any]:
+    resolved_config = resolve_default_config_path(config_path)
+    ctx = load_workspace_context(resolved_config)
+    manifest_path = ctx["manifest_path"].resolve()
+    workspace_root = ctx["workspace_root"].resolve()
+    reasons: list[str] = []
+    reason_codes: list[str] = []
+
+    if resolved_config.resolve() == CURRENT_WORKSPACE_EXAMPLE_PATH.resolve():
+        reason_codes.append("bundle-example-config")
+        reasons.append("config_path is the bundled example workspace config `workflow/configs/current_workspace.json`")
+    if manifest_path == CURRENT_PROJECT_MANIFEST_EXAMPLE_PATH.resolve():
+        reason_codes.append("bundle-example-manifest")
+        reasons.append("project_manifest is the bundled example manifest `workflow/configs/current_project_manifest.json`")
+    if _path_is_within(workspace_root, PRIMARY_WORKFLOW_ROOT):
+        reason_codes.append("workspace-root-inside-bundle")
+        reasons.append("workspace_root is inside the workflow_bundle repository and would write back into the public bundle")
+
+    status = "blocked" if reasons else "safe"
+    safety = {
+        "status": status,
+        "config_path": str(resolved_config),
+        "workspace_root": str(workspace_root),
+        "manifest_path": str(manifest_path),
+        "reason_codes": reason_codes,
+        "reasons": reasons,
+        "example_config_path": str(CURRENT_WORKSPACE_EXAMPLE_PATH),
+        "example_manifest_path": str(CURRENT_PROJECT_MANIFEST_EXAMPLE_PATH),
+    }
+    safety["message"] = _workspace_mutation_block_message(safety, "workspace mutation") if reasons else "workspace is safe for mutation"
+    return safety
+
+
+def ensure_workspace_mutation_allowed(config_path: Path | None, command: str) -> dict[str, Any]:
+    safety = workspace_mutation_safety(config_path)
+    if safety["status"] != "safe":
+        raise WorkspaceMutationBlockedError(_workspace_mutation_block_message(safety, command))
+    return safety
 
 
 def _render_workspace_workflow_readme(ctx: dict[str, Any]) -> str:
@@ -265,6 +332,7 @@ def read_active_workspace_pointer() -> dict[str, Any]:
 
 
 def set_active_workspace(config_path: Path) -> dict[str, str]:
+    ensure_workspace_mutation_allowed(config_path, "set-active-workspace")
     resolved_config = resolve_default_config_path(config_path)
     ctx = load_workspace_context(resolved_config)
     payload = {
@@ -350,6 +418,7 @@ def get_workspace_lock_status(config_path: Path | None = None) -> dict[str, Any]
 
 
 def acquire_workspace_lock(config_path: Path | None, command: str, owner: str | None = None, ttl_hours: int = LOCK_TTL_HOURS) -> dict[str, Any]:
+    ensure_workspace_mutation_allowed(config_path, command)
     resolved_config = resolve_default_config_path(config_path)
     ctx = load_workspace_context(resolved_config)
     state_paths = workflow_state_paths(ctx["config"], ctx["workspace_root"])
@@ -724,6 +793,7 @@ def _render_handoff_md(handoff: dict[str, Any]) -> str:
         f"- bundle_signature: `{handoff['bundle']['signature']}`",
         f"- recorded_bundle_signature: `{handoff['bundle']['recorded_signature'] or 'none'}`",
         f"- workflow_signature_status: `{handoff['bundle']['signature_status']}`",
+        f"- workspace_mutation_safety: `{handoff['mutation_safety']['status']}`",
         f"- lock_status: `{handoff['lock']['state']}`",
         f"- phase: `{handoff['phase']['name']}`",
         f"- phase_reason: {handoff['phase']['reason']}",
@@ -761,6 +831,8 @@ def _render_handoff_md(handoff: dict[str, Any]) -> str:
             "",
             f"- lock_path: `{handoff['lock']['path']}`",
             f"- lock_holder: `{handoff['lock']['holder'] or 'none'}`",
+            f"- workspace_mutation_reason_codes: `{', '.join(handoff['mutation_safety']['reason_codes']) or 'none'}`",
+            f"- workspace_mutation_message: `{handoff['mutation_safety']['message']}`",
             f"- workflow_assets_synced_at: `{handoff['bundle']['synced_at'] or 'unknown'}`",
             f"- workflow_assets_state_path: `{handoff['bundle']['assets_state_path']}`",
             "",
@@ -773,9 +845,12 @@ def _render_handoff_md(handoff: dict[str, Any]) -> str:
     lines.extend(["", "## Blocking Issues", ""])
     if handoff["blocking_issues"]:
         for entry in handoff["blocking_issues"]:
-            lines.append(
-                f"- {entry.get('chapter', '')}: packet_outline_status={entry.get('packet_outline_status', '')}, packet_kind={entry.get('packet_kind', '')}"
-            )
+            if entry.get("message"):
+                lines.append(f"- {entry['message']}")
+            else:
+                lines.append(
+                    f"- {entry.get('chapter', '')}: packet_outline_status={entry.get('packet_outline_status', '')}, packet_kind={entry.get('packet_kind', '')}"
+                )
     else:
         lines.append("- none")
     return "\n".join(lines).rstrip() + "\n"
@@ -797,6 +872,7 @@ def build_workspace_snapshot(
     summary_paths = _summary_paths(config, workspace_root)
     active_pointer = read_active_workspace_pointer()
     signature = workflow_signature_status(resolved_config)
+    mutation_safety = workspace_mutation_safety(resolved_config)
     lock_status = get_workspace_lock_status(resolved_config)
     from core.workspace_checks import run_workspace_check
 
@@ -819,6 +895,24 @@ def build_workspace_snapshot(
                 ]
             )
         )
+    if mutation_safety["status"] != "safe":
+        next_commands = [
+            "python3 workflow_bundle/tools/cli.py intake --project-root <project-root> --title <title> --out <workspace-dir>",
+            "python3 workflow_bundle/tools/cli.py set-active-workspace --config <workspace-dir>/workflow/configs/workspace.json>",
+        ]
+        read_first = list(
+            dict.fromkeys(
+                [
+                    str(resolved_config),
+                    str(PRIMARY_WORKFLOW_ROOT / "workflow" / "README.md"),
+                    str(PRIMARY_WORKFLOW_ROOT / "workflow" / "WORKSPACE_SPEC.md"),
+                    str(PRIMARY_WORKFLOW_ROOT / "workflow" / "references" / "command-map.md"),
+                    *read_first,
+                ]
+            )
+        )
+    blocking_issues = list(preflight.get("blocking_entries", []))
+    blocking_issues.extend(preflight.get("workspace_mutation_blocking_entries", []))
     return {
         "generated_at": _now_iso(),
         "trigger": trigger,
@@ -847,6 +941,7 @@ def build_workspace_snapshot(
             "synced_at": signature["synced_at"],
             "missing_items": signature["missing_items"],
         },
+        "mutation_safety": mutation_safety,
         "lock": lock_status,
         "phase": {
             "name": phase["phase"],
@@ -878,7 +973,7 @@ def build_workspace_snapshot(
             "packet_status_counter": preflight["packet_status_counter"],
             "packet_kind_counter": preflight["packet_kind_counter"],
         },
-        "blocking_issues": preflight.get("blocking_entries", []),
+        "blocking_issues": blocking_issues,
         "style_warnings": {
             "style": preflight.get("style_warning_entries", []),
             "placeholder": preflight.get("placeholder_entries", []),
@@ -899,6 +994,7 @@ def build_workspace_snapshot(
             "do not continue chapter writing when packet_outline_status is stale/legacy/missing",
             "chapter 5 must consume code_evidence_pack, inline code snippets, and staged page screenshots when available",
             "drafted chapters must be polished with academic-paper-crafter before reviewed status",
+            "do not run mutation commands against bundle example configs or workspaces rooted inside workflow_bundle",
         ],
     }
 
@@ -916,6 +1012,7 @@ def refresh_workspace_handoff(config_path: Path | None = None, trigger: str = "m
         "handoff_md": str(state_paths["handoff_md"]),
         "phase": handoff["phase"]["name"],
         "workflow_signature_status": handoff["bundle"]["signature_status"],
+        "workspace_mutation_safety": handoff["mutation_safety"]["status"],
         "lock_status": handoff["lock"]["state"],
     }
 
@@ -963,6 +1060,8 @@ def build_resume_lines(config_path: Path | None = None) -> tuple[list[str], dict
         f"orchestrator_skill_path: {handoff['skills']['orchestrator_skill_path']}",
         f"resume_skill_path: {handoff['skills']['resume_skill_path']}",
         f"workflow_signature_status: {handoff['bundle']['signature_status']}",
+        f"workspace_mutation_safety: {handoff['mutation_safety']['status']}",
+        f"workspace_mutation_reason_codes: {','.join(handoff['mutation_safety']['reason_codes']) or 'none'}",
         f"lock_status: {handoff['lock']['state']}",
         f"handoff_json: {handoff['source_of_truth']['handoff_json']}",
         f"handoff_md: {handoff['source_of_truth']['handoff_md']}",
@@ -981,9 +1080,12 @@ def build_resume_lines(config_path: Path | None = None) -> tuple[list[str], dict
     lines.extend(["", "blocking_issues:"])
     if handoff["blocking_issues"]:
         for entry in handoff["blocking_issues"]:
-            lines.append(
-                f"  - {entry.get('chapter', '')}: packet_outline_status={entry.get('packet_outline_status', '')}, packet_kind={entry.get('packet_kind', '')}"
-            )
+            if entry.get("message"):
+                lines.append(f"  - {entry['message']}")
+            else:
+                lines.append(
+                    f"  - {entry.get('chapter', '')}: packet_outline_status={entry.get('packet_outline_status', '')}, packet_kind={entry.get('packet_kind', '')}"
+                )
     else:
         lines.append("  - none")
     if handoff["lock"]["state"] != "unlocked":

@@ -143,6 +143,7 @@ Linux 下也可以显式使用：
 
 - [configs/current_workspace.json](configs/current_workspace.json)
 - 它只保留为示例实例配置；无参命令现在优先读取 `workflow_bundle/workflow/configs/active_workspace.json`
+- 对该示例配置或任何 `workspace_root` 落在 `workflow_bundle/` 仓库内的配置，变更型命令会直接阻断；真实项目请始终通过 `intake` 生成独立 workspace
 
 当前活动工作区可通过以下命令查看：
 

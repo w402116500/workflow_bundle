@@ -5,6 +5,7 @@
 - 当前活动工作区指针：`workflow_bundle/workflow/configs/active_workspace.json`
 - 示例工作区配置：`workflow/configs/current_workspace.json`（仅示例，不作为当前项目默认值）
 - 项目清单：`workflow/configs/current_project_manifest.json`
+- 若当前配置指向示例配置或 `workspace_root` 仍落在 `workflow_bundle/` 仓库内，变更型命令会被阻断；先用 `intake` 生成真实项目 workspace
 
 ## 推荐执行顺序
 

@@ -106,6 +106,7 @@
 - 当前活动工作区指针：`workflow_bundle/workflow/configs/active_workspace.json`
 - 示例工作区配置：`workflow/configs/current_workspace.json`（仅示例，不再作为当前项目默认值）
 - 项目清单：`workflow/configs/current_project_manifest.json`
+- 若配置仍指向 bundle 示例或 `workspace_root` 位于 `workflow_bundle/` 仓库内，`extract`、`scaffold`、`prepare-writing`、`prepare-figures` 等变更型命令会直接阻断
 
 ## 说明
 
