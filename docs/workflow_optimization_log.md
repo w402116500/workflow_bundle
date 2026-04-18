@@ -269,6 +269,23 @@
   - `bash workflow/scripts/sync_root_compat.sh`
   - `python3 tools/cli.py selftest`
 
+## 2026-04-18 (v0.6.1 release)
+
+- Purpose: 将“bundle 示例配置变更阻断”作为正式补丁版发布，确保 `VERSION`、release note、semver tag 与中文里程碑 tag 一并收口，而不是只有代码提交没有版本标识。
+- Changes:
+  - 将当前正式版本从 `0.6.0` 提升为 `0.6.1`。
+  - 更新 `VERSION`、`CHANGELOG.md`、`workflow/11-versioning-and-release.md` 与 `docs/releases/README.md` 的当前版本口径。
+  - 新增 `docs/releases/v0.6.1.md`，归档本次补丁版 release note 与可直接粘贴到 GitHub Release 页面的简版文案。
+  - 计划创建：
+    - semver tag `v0.6.1`
+    - 中文 tag `工作区硬隔离保护-20260418`
+- Validation:
+  - `python3 tools/cli.py version`
+  - `python3 tools/cli.py version --json`
+  - `bash workflow/scripts/check_bundle_sync.sh`
+  - `python3 tools/cli.py selftest`
+  - `git diff --check`
+
 ## 2026-04-18 (version tag-existence clarification)
 
 - Purpose: 修正 `version` 命令把“根据 `VERSION` 推导出的目标 tag”与“Git 仓库里真实存在的 tag”混为一谈的问题，避免发布前误判目标 semver tag 已存在，并同步修正文档中的旧版本口径。

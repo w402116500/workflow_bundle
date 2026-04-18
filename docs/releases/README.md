@@ -11,6 +11,8 @@
 
 ## 当前记录
 
+- `v0.6.1.md`
+  - 为 bundle 示例配置和 in-repo workspace 增加正式的变更型命令阻断，避免新项目写回公共 workflow 仓库。
 - `v0.6.0.md`
   - 新增 `prepare-reference-guides` 正式入口，收口 guide 抽取、guide 驱动 AI 技术图与 PlantUML/ER 图共存的通用发布版本。
 - `v0.5.2.md`

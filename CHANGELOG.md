@@ -1,7 +1,29 @@
 # Changelog
 
-本文件从 `0.5.0` 开始维护结构化版本记录，当前最新版本为 `0.6.0`。
+本文件从 `0.5.0` 开始维护结构化版本记录，当前最新版本为 `0.6.1`。
 更早的历史提交与中文 milestone tag 仍然存在于 Git 历史中，但未形成统一 changelog；从当前版本起，正式 release 以语义化版本号为准。
+
+## [0.6.1] - 2026-04-18
+
+### Fixed
+
+- 将 `workflow/configs/current_workspace.json` 与 `workflow/configs/current_project_manifest.json` 明确收口为 bundle 示例实例，阻断对示例配置执行 `set-active-workspace`、`extract`、`refresh-handoff`、`clear-lock` 及其他变更型命令。
+- 阻断 `workspace_root` 仍落在 `workflow_bundle/` 仓库内的 in-repo workspace 继续写回公共 bundle，避免新项目把 handoff、execution log 与配置状态污染进公开仓库。
+
+### Changed
+
+- `resume`、handoff 与 `check-workspace` 现显式输出：
+  - `workspace_mutation_safety`
+  - `workspace_mutation_reason_codes`
+  - 针对 blocked 配置的迁移提示与推荐下一步命令
+- `tools/core/selftest.py` 新增 bundle 示例配置只读回归，覆盖：
+  - 只读 `resume`
+  - 被拒绝的 `set-active-workspace`
+  - 被拒绝的 `extract`
+  - `check-workspace` 的 mutation blocking 输出
+- `workflow/README.md`、`workflow/MIGRATION.md`、`workflow/WORKSPACE_SPEC.md`、`workflow/references/command-map.md` 与 `workflow/07-current-project-execution-checklist.md` 已同步收口为“示例配置只读、真实项目必须先 `intake`”的正式文档口径。
+- `.gitignore` 新增 `docs/workflow/`，避免 bundle 根目录运行时状态产物误入版本库。
+- 当前 bundle 正式版本提升为 `0.6.1`。
 
 ## [0.6.0] - 2026-04-18
 
@@ -71,6 +93,7 @@
 
 ## Historical Tags
 
+- `v0.6.1`
 - `v0.6.0`
 - `v0.5.2`
 - `v0.5.1`
