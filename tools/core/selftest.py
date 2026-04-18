@@ -150,8 +150,25 @@ def _default_er_output_name(figure_no: str) -> str:
     return f"generated/fig{_figure_no_slug(figure_no)}-er-diagram.png"
 
 
+def _default_plantuml_output_name(figure_no: str) -> str:
+    return f"generated/fig{_figure_no_slug(figure_no)}-plantuml.png"
+
+
 def _enabled_er_specs(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
     raw = config.get("er_figure_specs") or {}
+    if not isinstance(raw, dict):
+        return {}
+    enabled: dict[str, dict[str, Any]] = {}
+    for raw_figure_no, raw_spec in raw.items():
+        figure_no = str(raw_figure_no).strip()
+        if not figure_no or not isinstance(raw_spec, dict) or raw_spec.get("enabled", True) is False:
+            continue
+        enabled[figure_no] = raw_spec
+    return enabled
+
+
+def _enabled_plantuml_specs(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    raw = config.get("plantuml_figure_specs") or {}
     if not isinstance(raw, dict):
         return {}
     enabled: dict[str, dict[str, Any]] = {}
@@ -285,11 +302,46 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
         fixture_er_source.parent.mkdir(parents=True, exist_ok=True)
         fixture_er_source.write_text(SELFTEST_ER_DSL, encoding="utf-8")
         fixture_config = read_json(config_path)
+        fixture_plantuml_source = fixture_workspace / "docs" / "figure_specs" / "selftest-usecase.puml"
+        fixture_plantuml_source.write_text(
+            "\n".join(
+                [
+                    "@startuml",
+                    "!pragma layout smetana",
+                    "left to right direction",
+                    "skinparam monochrome true",
+                    "skinparam shadowing false",
+                    "skinparam backgroundColor white",
+                    "skinparam defaultFontName \"Noto Sans CJK SC\"",
+                    "skinparam packageStyle rectangle",
+                    "actor 平台管理员 as Admin",
+                    "actor 审计员 as Auditor",
+                    "rectangle 自测试系统 {",
+                    "  usecase \"账号治理\" as UC1",
+                    "  usecase \"审计核验\" as UC2",
+                    "}",
+                    "Admin --> UC1",
+                    "Auditor --> UC2",
+                    "@enduml",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
         fixture_config["er_figure_specs"] = {
             "4.2": {
                 "caption": "图4.2 自测试通用E-R图",
                 "source_path": "docs/figure_specs/selftest-er.dbdia",
                 "enabled": True,
+            }
+        }
+        fixture_config["plantuml_figure_specs"] = {
+            "3.2": {
+                "caption": "图3.2 自测试 PlantUML 用例图",
+                "source_path": "docs/figure_specs/selftest-usecase.puml",
+                "output_name": "generated/fig3-2-selftest-usecase.png",
+                "enabled": True,
+                "override_builtin": True,
             }
         }
         write_json(config_path, fixture_config)
@@ -372,6 +424,38 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
             }
             stage["assertions"].append(assertion)
             _require(assertion["ok"], f"fixture generic er sidecar missing: {path}")
+
+        refreshed_fixture_config = read_json(config_path)
+        plantuml_cfg = (refreshed_fixture_config.get("figure_map") or {}).get("3.2", {})
+        assertion = {
+            "label": "fixture_plantuml_renderer",
+            "ok": str(plantuml_cfg.get("renderer") or "") == "plantuml",
+            "actual": str(plantuml_cfg.get("renderer") or ""),
+        }
+        stage["assertions"].append(assertion)
+        _require(assertion["ok"], "fixture plantuml figure did not render with plantuml renderer")
+
+        generated_plantuml_path = fixture_workspace / str(plantuml_cfg.get("path") or "")
+        assertion = {
+            "label": "fixture_plantuml_output_exists",
+            "ok": generated_plantuml_path.exists(),
+            "path": str(generated_plantuml_path),
+        }
+        stage["assertions"].append(assertion)
+        _require(assertion["ok"], f"fixture plantuml output missing: {generated_plantuml_path}")
+
+        plantuml_stem = Path(
+            str((fixture_config.get("plantuml_figure_specs") or {}).get("3.2", {}).get("output_name") or _default_plantuml_output_name("3.2"))
+        ).stem
+        for filename in (f"{plantuml_stem}.puml", f"{plantuml_stem}.svg"):
+            path = generated_src_dir / filename
+            assertion = {
+                "label": f"fixture_plantuml_sidecar:{filename}",
+                "ok": path.exists(),
+                "path": str(path),
+            }
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], f"fixture plantuml sidecar missing: {path}")
 
         chapter4_path = fixture_workspace / "polished_v3" / "04-系统设计.md"
         chapter5_path = fixture_workspace / "polished_v3" / "05-系统实现.md"
@@ -644,6 +728,88 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
         fixture_ai_image_generation["enabled"] = True
         fixture_ai_image_generation["provider"] = "zetatechs-gemini"
         fixture_ai_config["image_generation"] = fixture_ai_image_generation
+        fixture_ai_config["reference_extraction"] = {
+            "enabled": True,
+            "provider": "zetatechs-gemini",
+            "base_url": "https://api.zetatechs.com",
+            "api_key_env": "NEWAPI_API_KEY",
+            "default_model": "gemini-3.1-flash-image-preview",
+            "timeout_sec": 180,
+            "output_dir": "docs/images/reference_guides",
+        }
+        fixture_guide_markdown = fixture_workspace / "docs" / "reference_inputs" / "fixture-use-case-guide.md"
+        fixture_guide_markdown.parent.mkdir(parents=True, exist_ok=True)
+        fixture_guide_markdown.write_text(
+            "\n".join(
+                [
+                    "# 传统 UML 用例图要点",
+                    "",
+                    "- 参与者使用小人。",
+                    "- 用例使用椭圆。",
+                    "- 系统边界使用矩形框，参与者在外、用例在内。",
+                    "- 普通关联线用于角色和用例之间的关系。",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        fixture_guide_image = fixture_workspace / "docs" / "reference_inputs" / "fixture-use-case-example.png"
+        Image.new("RGB", (240, 160), (255, 255, 255)).save(fixture_guide_image)
+        fixture_structure_markdown = fixture_workspace / "docs" / "reference_inputs" / "fixture-structure-guide.md"
+        fixture_structure_markdown.write_text(
+            "\n".join(
+                [
+                    "# 传统系统功能结构图要点",
+                    "",
+                    "- 顶层系统名称居中置顶。",
+                    "- 一级模块横向展开。",
+                    "- 二级子功能在对应模块下纵向展开。",
+                    "- 使用矩形框和清晰的正交连接线。",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        fixture_ai_config["reference_guide_specs"] = {
+            "fixture-use-case-guide": {
+                "enabled": True,
+                "guide_type": "use_case",
+                "description": "自测试用：传统 UML 用例图规范抽取。",
+                "sources": [
+                    {
+                        "kind": "markdown",
+                        "path": str(fixture_guide_markdown.relative_to(fixture_workspace)),
+                        "role": "text-spec",
+                    },
+                    {
+                        "kind": "image",
+                        "path": str(fixture_guide_image.relative_to(fixture_workspace)),
+                        "role": "symbol-style",
+                        "note": "仅用于测试图像来源被正确登记。",
+                    },
+                ],
+                "extract_focus": ["符号规范", "布局规范", "关系规范", "禁止项"],
+            },
+            "fixture-structure-guide": {
+                "enabled": True,
+                "guide_type": "function_structure",
+                "description": "自测试用：传统系统功能结构图规范抽取。",
+                "sources": [
+                    {
+                        "kind": "markdown",
+                        "path": str(fixture_structure_markdown.relative_to(fixture_workspace)),
+                        "role": "text-spec",
+                    },
+                    {
+                        "kind": "image",
+                        "path": str(mapped_figure5_path.relative_to(fixture_workspace)),
+                        "role": "layout-style",
+                        "note": "仅用于测试 function_structure guide 能读取已冻结样图。",
+                    },
+                ],
+                "extract_focus": ["树状层级", "模块框样式", "正交连线", "禁止项"],
+            }
+        }
         fixture_ai_config["ai_figure_specs"] = {
             "5.1": {
                 "caption": "图5.1 系统功能结构图",
@@ -653,6 +819,7 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
                 "style_notes": "参考图仅用于继承树状布局、模块分组与白底黑线风格；重新清理图内文字，不保留任何旧标题、边缘装饰或英文字样。",
                 "enabled": True,
                 "override_builtin": True,
+                "reference_guides": ["missing-structure-guide"],
                 "reference_images": [
                     {
                         "path": str(mapped_figure5_path.relative_to(fixture_workspace)),
@@ -662,6 +829,155 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
                 ],
             }
         }
+        write_json(config_path, fixture_ai_config)
+
+        guide_prepare_cmd = [
+            sys.executable,
+            str(cli_path),
+            "prepare-reference-guides",
+            "--config",
+            str(config_path),
+            "--guide",
+            "fixture-use-case-guide",
+            "--dry-run",
+        ]
+        guide_prepare_result, _, _ = _run_command(
+            guide_prepare_cmd,
+            "10-prepare-reference-guides-dry-run",
+            logs_dir,
+        )
+        stage["commands"].append(guide_prepare_result)
+        _require(guide_prepare_result["returncode"] == 0, "fixture prepare-reference-guides --dry-run failed")
+
+        guide_summary_path = fixture_workspace / "word_output" / "reference_guide_prepare_summary.json"
+        guide_manifest_path = fixture_workspace / "docs" / "images" / "reference_guides" / "manifest.json"
+        for path in (guide_summary_path, guide_manifest_path):
+            assertion = {"label": f"fixture_reference_guide_artifact:{path.name}", "ok": path.exists(), "path": str(path)}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], f"fixture reference guide artifact missing: {path}")
+
+        guide_summary = read_json(guide_summary_path)
+        guide_prepared = list(guide_summary.get("prepared_guides") or [])
+        guide_manifest = read_json(guide_manifest_path)
+        guide_manifest_entry = ((guide_manifest.get("guides") or {}).get("fixture-use-case-guide") or {})
+        for label, ok, actual in (
+            ("fixture_reference_guide_dry_run_status", len(guide_prepared) == 1, len(guide_prepared)),
+            (
+                "fixture_reference_guide_manifest_markdown_source",
+                ((guide_manifest_entry.get("sources") or [{}])[0].get("kind") == "markdown"),
+                ((guide_manifest_entry.get("sources") or [{}])[0].get("kind")),
+            ),
+            (
+                "fixture_reference_guide_manifest_image_source",
+                any(str(item.get("kind") or "") == "image" for item in (guide_manifest_entry.get("sources") or [])),
+                guide_manifest_entry.get("sources") or [],
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture reference guide dry-run regression failed")
+
+        structure_guide_prepare_cmd = [
+            sys.executable,
+            str(cli_path),
+            "prepare-reference-guides",
+            "--config",
+            str(config_path),
+            "--guide",
+            "fixture-structure-guide",
+            "--dry-run",
+        ]
+        structure_guide_prepare_result, _, _ = _run_command(
+            structure_guide_prepare_cmd,
+            "10b-prepare-reference-guides-dry-run-function-structure",
+            logs_dir,
+        )
+        stage["commands"].append(structure_guide_prepare_result)
+        _require(
+            structure_guide_prepare_result["returncode"] == 0,
+            "fixture prepare-reference-guides --dry-run failed for function_structure guide",
+        )
+
+        guide_summary = read_json(guide_summary_path)
+        guide_prepared = list(guide_summary.get("prepared_guides") or [])
+        guide_manifest = read_json(guide_manifest_path)
+        structure_manifest_entry = ((guide_manifest.get("guides") or {}).get("fixture-structure-guide") or {})
+        for label, ok, actual in (
+            ("fixture_structure_guide_dry_run_status", len(guide_prepared) == 1, len(guide_prepared)),
+            (
+                "fixture_structure_guide_manifest_type",
+                str(structure_manifest_entry.get("guide_type") or "") == "function_structure",
+                structure_manifest_entry.get("guide_type"),
+            ),
+            (
+                "fixture_structure_guide_manifest_image_source",
+                any(str(item.get("kind") or "") == "image" for item in (structure_manifest_entry.get("sources") or [])),
+                structure_manifest_entry.get("sources") or [],
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture function_structure guide regression failed")
+
+        ai_missing_guide_cmd = [
+            sys.executable,
+            str(cli_path),
+            "prepare-ai-figures",
+            "--config",
+            str(config_path),
+            "--fig",
+            "5.1",
+            "--dry-run",
+        ]
+        ai_missing_guide_result, _, ai_missing_guide_stderr = _run_command(
+            ai_missing_guide_cmd,
+            "11-prepare-ai-figures-dry-run-missing-guide",
+            logs_dir,
+        )
+        stage["commands"].append(ai_missing_guide_result)
+        for label, ok, actual in (
+            ("fixture_ai_missing_guide_status", ai_missing_guide_result["returncode"] != 0, ai_missing_guide_result["returncode"]),
+            (
+                "fixture_ai_missing_guide_reason",
+                "missing-structure-guide" in ai_missing_guide_stderr,
+                ai_missing_guide_stderr,
+            ),
+        ):
+            assertion = {"label": label, "ok": ok, "actual": actual}
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], "fixture AI missing-guide regression did not trigger as expected")
+
+        reference_guides_dir = fixture_workspace / "docs" / "images" / "reference_guides"
+        reference_guides_dir.mkdir(parents=True, exist_ok=True)
+        manual_guide_name = "fixture-manual-structure"
+        manual_guide_json = reference_guides_dir / f"{manual_guide_name}.json"
+        write_json(
+            manual_guide_json,
+            {
+                "schema_version": 1,
+                "guide_name": manual_guide_name,
+                "guide_type": "function_structure",
+                "description": "自测试手工 guide",
+                "summary": "树状功能结构图应采用白底黑线、顶层居中、子模块分层展开的传统论文版式。",
+                "symbol_rules": ["所有模块使用矩形框。"],
+                "layout_rules": ["顶层系统名称置顶，一级模块横向展开，二级模块在对应一级模块下纵向展开。"],
+                "relationship_rules": ["使用清晰的正交或垂直连接线表达层级。"],
+                "text_rules": ["图内文字应简洁统一。"],
+                "forbidden_rules": ["不要渐变、不要海报式装饰、不要图内重复图题。"],
+                "common_failure_modes": ["不要把树状图画成流程图。"],
+                "prompt_fragments": {
+                    "must": ["白底黑线", "树状层级清晰"],
+                    "avoid": ["不要装饰性图标"],
+                    "layout": ["顶层居中，一级横向，二级纵向"],
+                    "style": ["传统论文技术图风格"],
+                    "text": ["中文标签精炼统一"],
+                },
+                "spec_hash": "fixture-manual-guide",
+            },
+        )
+
+        fixture_ai_config = read_json(config_path)
+        fixture_ai_config["ai_figure_specs"]["5.1"]["reference_guides"] = [manual_guide_name]
         write_json(config_path, fixture_ai_config)
 
         ai_prepare_cmd = [
@@ -676,11 +992,11 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
         ]
         ai_prepare_result, _, _ = _run_command(
             ai_prepare_cmd,
-            "10-prepare-ai-figures-dry-run-reference-image",
+            "12-prepare-ai-figures-dry-run-reference-guide",
             logs_dir,
         )
         stage["commands"].append(ai_prepare_result)
-        _require(ai_prepare_result["returncode"] == 0, "fixture prepare-ai-figures --dry-run failed for reference-image workflow")
+        _require(ai_prepare_result["returncode"] == 0, "fixture prepare-ai-figures --dry-run failed for reference-guide workflow")
 
         ai_summary_path = fixture_workspace / "word_output" / "ai_figure_prepare_summary.json"
         ai_prompt_manifest_path = fixture_workspace / "docs" / "images" / "generated_ai" / "prompt_manifest.json"
@@ -702,19 +1018,19 @@ def _run_fixture_stage(out_root: Path) -> dict[str, Any]:
                 ((ai_manifest_entry.get("reference_images") or [{}])[0].get("path")),
             ),
             (
-                "fixture_ai_prepare_reference_note",
-                "树状层级" in str(((ai_manifest_entry.get("reference_images") or [{}])[0].get("note") or "")),
-                ((ai_manifest_entry.get("reference_images") or [{}])[0].get("note")),
+                "fixture_ai_prepare_reference_guide_name",
+                ((ai_manifest_entry.get("reference_guides") or [{}])[0].get("guide_name") == manual_guide_name),
+                ((ai_manifest_entry.get("reference_guides") or [{}])[0].get("guide_name")),
             ),
         ):
             assertion = {"label": label, "ok": ok, "actual": actual}
             stage["assertions"].append(assertion)
-            _require(assertion["ok"], "fixture AI reference-image prompt manifest regression failed")
+            _require(assertion["ok"], "fixture AI reference-guide prompt manifest regression failed")
 
         ai_preflight_cmd = [sys.executable, str(cli_path), "release-preflight", "--config", str(config_path)]
         ai_preflight_result, ai_preflight_stdout, _ = _run_command(
             ai_preflight_cmd,
-            "11-release-preflight-ai-override-missing-image",
+            "13-release-preflight-ai-override-missing-image",
             logs_dir,
         )
         stage["commands"].append(ai_preflight_result)
@@ -890,6 +1206,7 @@ def _run_workspace_stage(config_path: Path, out_root: Path) -> dict[str, Any]:
             _require(assertion["ok"], f"workspace release summary failed assertion: {label}={actual}")
 
         enabled_er_specs = _enabled_er_specs(ctx["config"])
+        enabled_plantuml_specs = _enabled_plantuml_specs(ctx["config"])
         generated_src_dir = ctx["workspace_root"] / "docs" / "images" / "generated_src"
         for figure_no, er_spec in enabled_er_specs.items():
             figure_cfg = (ctx["config"].get("figure_map") or {}).get(figure_no, {})
@@ -912,6 +1229,28 @@ def _run_workspace_stage(config_path: Path, out_root: Path) -> dict[str, Any]:
                 }
                 stage["assertions"].append(assertion)
                 _require(assertion["ok"], f"workspace er sidecar missing for figure {figure_no}: {path}")
+
+        for figure_no, plantuml_spec in enabled_plantuml_specs.items():
+            figure_cfg = (ctx["config"].get("figure_map") or {}).get(figure_no, {})
+            assertion = {
+                "label": f"workspace_plantuml_renderer:{figure_no}",
+                "ok": str(figure_cfg.get("renderer") or "") == "plantuml",
+                "actual": str(figure_cfg.get("renderer") or ""),
+            }
+            stage["assertions"].append(assertion)
+            _require(assertion["ok"], f"workspace plantuml figure {figure_no} renderer mismatch: expected plantuml")
+
+            output_name = str(plantuml_spec.get("output_name") or "").strip() or _default_plantuml_output_name(figure_no)
+            stem = Path(output_name).stem
+            for filename in (f"{stem}.puml", f"{stem}.svg"):
+                path = generated_src_dir / filename
+                assertion = {
+                    "label": f"workspace_plantuml_sidecar:{figure_no}:{filename}",
+                    "ok": path.exists(),
+                    "path": str(path),
+                }
+                stage["assertions"].append(assertion)
+                _require(assertion["ok"], f"workspace plantuml sidecar missing for figure {figure_no}: {path}")
 
         chapter5_path = ctx["workspace_root"] / ctx["config"].get("build", {}).get("input_dir", "polished_v3") / "05-系统实现.md"
         chapter5_text = chapter5_path.read_text(encoding="utf-8") if chapter5_path.exists() else ""

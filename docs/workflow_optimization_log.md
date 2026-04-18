@@ -123,3 +123,159 @@
   - `bash workflow/scripts/check_bundle_sync.sh`
   - `python3 tools/cli.py selftest`
   - `git diff --check`
+
+## 2026-04-18 (chapter-3 plantuml workflow integration)
+
+- Purpose: 将 PlantUML 纳入正式可重复生成链路，并修复当前环境默认 Java 8 无法直接运行 vendored PlantUML 的问题。
+- Changes:
+  - 扩展 `tools/core/figure_assets.py`，新增 `plantuml_figure_specs` 输入面、`plantuml` renderer、`.puml/.svg` 侧车产物写出，以及 Java 11+ 运行时自动选择逻辑。
+  - 为 `dbdia-er` / `plantuml` 补充侧车存在性判定，避免输出 PNG 命中缓存时遗漏 `generated_src/` 中的源码与 SVG 侧车。
+  - 扩展 `tools/core/selftest.py`，新增 PlantUML fixture 回归，验证 `prepare-figures` 能正确渲染 PNG、登记 `figure_map.renderer=plantuml` 并写出 `.puml/.svg`。
+  - 更新 `workflow/README.md`、`workflow/WORKSPACE_SPEC.md`、`workflow/templates/workspace-config.template.json`、`workflow/configs/current_workspace.json` 与 `vendor/README.md`，把 PlantUML 明确纳入正式 figure workflow contract。
+- Validation:
+  - `python3 -m py_compile tools/core/figure_assets.py tools/core/selftest.py`
+  - `bash workflow/scripts/sync_root_compat.sh`
+  - `python3 tools/cli.py selftest`
+
+## 2026-04-18 (traditional UML use-case AI workflow template)
+
+- Purpose: 将传统 UML 用例图从不符合论文规范的临时位图/演示路径迁移为“参考图 + 提示词约束”的 AI 可重复生成链路，并把该做法沉淀为通用 workflow 模板。
+- Changes:
+  - 复核一组本地 UML 教程材料并抽取共性规范，明确传统 UML 用例图必须满足：
+    - 参与者使用小人 `Actor`
+    - 用例使用椭圆
+    - 系统边界使用带系统名的矩形框
+    - 参与者位于边界外，用例位于边界内
+    - 默认只保留普通关联线，不使用 `include` / `extend` / 泛化
+  - 更新 `workflow/06-ai-prompt-guide.md`，新增 `4.8.1 传统 UML 用例图 AI 模板`，明确：
+    - `diagram_type` 使用 `use_case`
+    - 使用本地教程参考图作为 `reference_images`
+    - 用 `prompt_override` 明确禁止角色矩形框、流程图箭头、彩色教程风格与额外说明框
+    - 如果正文 Markdown 已显式写死图片路径，需要同步改到 AI 输出路径
+  - 在工作区示例中验证 `ai_figure_specs` 能输出黑白论文风格的传统 UML 用例图。
+  - 验证当某图号转由 AI 接管时，可通过关闭对应 `plantuml_figure_specs` 项避免 `prepare-figures` 再次覆盖。
+- Validation:
+  - `python3 tools/cli.py sync-workflow-assets --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json`
+  - `python3 tools/cli.py prepare-ai-figures --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --fig 3.2 --dry-run`
+  - `python3 tools/cli.py prepare-ai-figures --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --fig 3.2`
+  - `python3 tools/cli.py prepare-figures --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json`
+  - `python3 tools/cli.py release-preflight --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json`
+  - `python3 tools/cli.py release-build --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --output-name thesis-workspace_ai-usecase-check.docx`
+  - `python3 tools/cli.py release-verify --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --output-name thesis-workspace_ai-usecase-check.docx`
+  - 已确认 `figure_map.3.2.renderer = ai-image`，并确认 `word_output/figure_insert_log.csv` 将 `图3-2` 插入自 `docs/images/generated_ai/fig3-2-ai.png`。
+
+## 2026-04-18 (use-case straight-line constraint refinement)
+
+- Purpose: 将“用例图关联线不得拐弯”沉淀为传统 UML 用例图 AI 模板的硬约束，避免 AI 在论文图中生成折线或回折连接。
+- Changes:
+  - 更新 `workflow/06-ai-prompt-guide.md` 的传统 UML 用例图模板，新增“所有关联线必须为单段直线，禁止折线、回折线、曲线”的明确要求。
+  - 同步收紧工作区 `ai_figure_specs.3.2` 的 `style_notes` 与 `prompt_override`，强制：
+    - 参与者到用例只能是一条单段直线
+    - 可轻微打破绝对均匀网格，但不能为了对称而生成折线
+    - 多参与者与多用例示例按同高关系布局，降低 AI 生成折线的概率
+- Validation:
+  - `python3 tools/cli.py prepare-ai-figures --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --fig 3.2`
+  - `python3 tools/cli.py release-build --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --output-name thesis-workspace_ai-usecase-straight.docx`
+  - `python3 tools/cli.py release-verify --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --output-name thesis-workspace_ai-usecase-straight.docx`
+
+## 2026-04-18 (reference guide extraction workflow)
+
+- Purpose: 把“直接把参考图喂给生图模型”的弱约束链路升级为“先抽取参考图规范 guide，再由 AI 生图消费 guide”的两阶段正式 workflow。
+- Changes:
+  - 新增 `tools/core/reference_guides.py`，实现：
+    - `reference_extraction` 配置解析
+    - `reference_guide_specs` 规范抽取
+    - `prepare-reference-guides` 产物写出到 `docs/images/reference_guides/*.json|*.md`
+    - guide 缓存与 `spec_hash` 校验
+    - guide 缺失/过期时的阻断校验
+  - 扩展 `tools/cli.py`，新增正式入口：
+    - `python3 workflow_bundle/tools/cli.py prepare-reference-guides --config <workspace.json> [--guide <guide-name>] [--force] [--dry-run]`
+  - 扩展 `tools/core/ai_image_generation.py`：
+    - `ai_figure_specs.<fig>.reference_guides`
+    - 生图 prompt 可消费 guide JSON 摘要
+    - prompt manifest 记录 `reference_guides`
+    - 当 guide JSON 缺失或相对当前 spec 已过期时，`prepare-ai-figures` / `release-preflight` 直接失败
+  - 扩展 `tools/core/project_common.py`、`workflow/templates/workspace-config.template.json`、`workflow/configs/current_workspace.json` 与 `workflow/WORKSPACE_SPEC.md`，把 `reference_extraction` / `reference_guide_specs` 固化为正式 workspace contract。
+  - 更新 `workflow/README.md`、`workflow/references/command-map.md`、`tools/README.md` 与 `workflow/06-ai-prompt-guide.md`，明确“guide 为主、reference_images 为辅”的推荐用法。
+  - 扩展 `tools/core/selftest.py`，新增三类 fixture 回归：
+    - `prepare-reference-guides --dry-run` 产物登记
+    - `prepare-ai-figures` 在 guide 缺失时直接失败
+    - `prepare-ai-figures` 在 guide 存在时把 `reference_guides` 正确写入 prompt manifest
+- Validation:
+  - `python3 -m py_compile tools/core/reference_guides.py tools/core/ai_image_generation.py tools/core/selftest.py tools/cli.py tools/core/project_common.py`
+  - `bash workflow/scripts/sync_root_compat.sh`
+  - `python3 tools/cli.py selftest`
+  - `python3 tools/cli.py prepare-reference-guides --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --guide uml_use_case_traditional_zh --dry-run`
+  - `python3 tools/cli.py prepare-reference-guides --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --guide uml_use_case_traditional_zh`
+  - `python3 tools/cli.py prepare-ai-figures --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --fig 3.2 --dry-run`
+  - `python3 tools/cli.py sync-workflow-assets --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json`
+  - `python3 tools/cli.py release-preflight --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json`
+
+## 2026-04-18 (non-er reference-guide rollout)
+
+- Purpose: 将 `reference_guides` 的正式用法从单一用例图扩展到非 ER 技术图全族，统一收口架构图、流程图、功能结构图的“冻结样图 -> 抽 guide -> AI 生图”链路，同时明确 `ER` 图继续保留 `dbdia-er` 确定性渲染路径。
+- Changes:
+  - 更新 `tools/core/reference_guides.py`：
+    - 新增 `guide_type=function_structure` 的抽取重点提示
+    - 收紧 `architecture` / `flowchart` 抽取提示
+    - 明确“已验收样图只用于提炼图法，不把业务标签当通用规范”
+  - 更新 `tools/core/selftest.py`，新增 `function_structure` guide 的 `prepare-reference-guides --dry-run` 回归。
+  - 更新 `workflow/WORKSPACE_SPEC.md`、`workflow/README.md`、`tools/README.md`、`workflow/references/command-map.md` 与 `workflow/06-ai-prompt-guide.md`：
+    - 推荐非 ER AI 技术图优先启用 `reference_guides`
+    - 推荐先把 guide source 冻结到 `docs/images/reference_guides_src/`
+    - 明确 `ER` 图通常继续走 `er_figure_specs + dbdia-er`
+    - 新增传统分层架构图、传统流程图、传统系统功能结构图模板
+  - 更新 `workflow/configs/current_workspace.json` 与 `workflow/templates/workspace-config.template.json`，新增稳定 guide source 的官方示例写法。
+  - 将本轮本地发版草稿收口为正式 minor 版本 `0.6.0`，并以新的 release note 重新归档。
+- Validation:
+  - `python3 -m py_compile tools/core/reference_guides.py tools/core/selftest.py tools/cli.py`
+  - `python3 tools/cli.py prepare-reference-guides --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --dry-run`
+  - `python3 tools/cli.py prepare-reference-guides --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --force`
+  - `python3 tools/cli.py prepare-ai-figures --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --fig 3.2 --fig 4.1 --fig 4.3 --fig 4.4 --fig 4.5 --fig 5.1 --dry-run`
+  - `python3 tools/cli.py prepare-ai-figures --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --fig 5.1 --force`
+  - `python3 tools/cli.py prepare-ai-figures --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json --fig 3.2 --fig 4.1 --fig 4.3 --fig 4.4 --fig 4.5 --fig 5.1`
+  - `bash workflow/scripts/sync_root_compat.sh`
+  - `bash workflow/scripts/check_bundle_sync.sh`
+  - `python3 tools/cli.py sync-workflow-assets --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json`
+  - `python3 tools/cli.py release-preflight --config /home/ub/xianyu/wurenji_work/workspace/workflow/configs/workspace.json`
+  - `python3 tools/cli.py selftest`
+  - `git diff --check`
+
+## 2026-04-18 (version tag-existence clarification)
+
+- Purpose: 修正 `version` 命令把“根据 `VERSION` 推导出的目标 tag”与“Git 仓库里真实存在的 tag”混为一谈的问题，避免发布前误判目标 semver tag 已存在，并同步修正文档中的旧版本口径。
+- Changes:
+  - 更新 `tools/core/bundle_version.py`，把版本读取结果拆分为：
+    - `suggested_tag`
+    - `tag_exists`
+    - `tag_commit`
+  - 更新 `tools/cli.py` 的 `version` 输出与 JSON 结构，使 CLI 能明确区分“建议发布的 tag”与“已存在的 tag”。
+  - 更新 `tools/README.md`、`workflow/11-versioning-and-release.md`、`workflow/README.md`，把版本检查步骤改为先看 `suggested_tag`，再看 `tag_exists`。
+  - 更新 `CHANGELOG.md` 与 release note，把这次 tag 语义澄清纳入 `0.6.0` 的正式版本说明。
+- Validation:
+  - `python3 -m py_compile tools/core/bundle_version.py tools/cli.py`
+  - `python3 tools/cli.py version`
+  - `python3 tools/cli.py version --json`
+  - `bash workflow/scripts/sync_root_compat.sh`
+  - `bash workflow/scripts/check_bundle_sync.sh`
+  - `python3 tools/cli.py selftest`
+
+## 2026-04-18 (v0.6.0 public release scope cleanup)
+
+- Purpose: 将本轮围绕 `reference_guides`、PlantUML 与版本治理的改动收口为公共 `v0.6.0` 发版，同时剥离当前论文工作区的项目化默认值，避免将实例特例固化进 bundle。
+- Changes:
+  - 回退 `tools/core/build_final_thesis_docx.py` 中 chapter 3 的项目化默认图题回退，恢复 bundle 公共默认值。
+  - 回退 `tools/core/chapter_profile.py` 中基于特定角色集合触发双需求图合同的逻辑，避免把单一工作区的章节合同误写成通用规则。
+  - 将本地尚未发布的 `0.5.3` 草稿版本重定级为 `0.6.0`，统一更新 `VERSION`、`CHANGELOG.md`、`docs/releases/README.md`、`workflow/11-versioning-and-release.md` 与正式 release note。
+  - 保留并发布本轮真正通用的能力：
+    - `prepare-reference-guides`
+    - `reference_extraction`
+    - `reference_guide_specs`
+    - `ai_figure_specs.<fig>.reference_guides`
+    - `plantuml_figure_specs`
+- Validation:
+  - `python3 tools/cli.py version --json`
+  - `bash workflow/scripts/sync_root_compat.sh`
+  - `bash workflow/scripts/check_bundle_sync.sh`
+  - `python3 tools/cli.py selftest`
+  - `git diff --check`

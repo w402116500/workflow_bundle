@@ -247,6 +247,164 @@ figures:
 完成后汇报生成图片路径、prompt_manifest.json 路径，以及哪些图号已写回 figure_map。
 ```
 
+### 4.8.1 传统 UML 用例图 AI 模板
+
+当某张图不适合继续用 `PlantUML` 或本地 Pillow 布局，而你又希望它保持“传统 UML 用例图”画法时，推荐先把教程图和说明文档抽成 `reference_guides`，再由 `ai_figure_specs` 消费 guide 与原始参考图。
+
+适用边界：
+
+- 适合：论文中的规范黑白用例图，需要参考既有教程图法，但当前本地自动布局不稳定。
+- 不适合：已经有稳定可重复生成的本地 UML 渲染器，且输出质量满足论文要求的场景。
+
+模板要点：
+
+- `diagram_type` 固定写 `use_case`
+- 有教程 Markdown 或多张样图时，优先先配置 `reference_guide_specs` 并执行 `prepare-reference-guides`
+- 参考图优先提供：
+  - Actor 小人符号示例
+  - 系统边界示例
+  - 多用例排版示例
+- `prompt_override` 里要明确：
+  - Actor 小人
+  - 系统边界矩形框
+  - 用例椭圆
+  - 参与者在边界外、用例在边界内
+  - 只保留普通关联线
+  - 所有关联线必须是单段直线，禁止折线、回折线、曲线
+  - 禁止 `include / extend / 泛化 / 流程箭头 / 泳道 / 彩色教程风`
+
+示例：
+
+```yaml
+reference_guide_specs:
+  uml_use_case_traditional_zh:
+    guide_type: use_case
+    description: 传统 UML 用例图规范抽取
+    enabled: true
+    sources:
+      - path: <教程 markdown>
+        kind: markdown
+        role: text_spec
+      - path: <actor 示例图>
+        kind: image
+        role: symbol_style
+      - path: <系统边界示例图>
+        kind: image
+        role: style_layout
+      - path: <多用例排版示例图>
+        kind: image
+        role: style_layout
+
+ai_figure_specs:
+  3.2:
+    caption: 图3.2 多角色协同用例关系图
+    chapter: 第三章 需求分析
+    diagram_type: use_case
+    enabled: true
+    override_builtin: false
+    reference_guides:
+      - uml_use_case_traditional_zh
+    intent: 绘制传统 UML 用例图，展示多角色与系统核心用例之间的对应关系。
+    style_notes: 白底黑线、论文黑白版、传统 UML 用例图。
+    prompt_override: |
+      白底黑线、二维、传统 UML 用例图风格。
+      只允许使用 Actor 小人、系统边界矩形框、用例椭圆、无箭头实线关联。
+      所有关联线必须为单段直线，不允许折线、L 形线、Z 形线、回折线或曲线。
+      不要 include、extend、泛化、流程箭头、泳道、矩形角色框、红黄教程配色。
+    reference_images:
+      - path: <actor 示例图>
+        role: symbol_style
+        note: 只参考小人画法，不参考颜色。
+      - path: <系统边界示例图>
+        role: style_layout
+        note: 只参考边界内外关系，不参考颜色。
+      - path: <多用例排版示例图>
+        role: style_layout
+        note: 只参考传统排版语言，不参考旧图中的 include 虚线关系。
+```
+
+落地注意：
+
+- `prepare-reference-guides` 负责把教程图和说明文档先抽成结构化 guide，`prepare-ai-figures` 只消费 guide，不替代 guide 抽取阶段。
+- 如果该图号原来还在 `plantuml_figure_specs`、`er_figure_specs` 或其他确定性链路里，先把对应 spec 关闭，否则后续 `prepare-figures` 可能重新接管该图号。
+- 如果正文 Markdown 里写死了图片路径，例如 `![图3.2 ...](../docs/images/generated/xxx.png)`，要同步把路径改到 AI 输出位置；仅修改 `figure_map` 不足以影响这种显式图片行。
+- 生成顺序应为：
+  - `prepare-reference-guides --config <workspace.json> --guide <guide-name>`
+  - `prepare-ai-figures --config <workspace.json> --fig <图号>`
+  - 再执行 `release-preflight` / `release-build` / `release-verify`
+
+### 4.8.2 传统分层架构图 AI 模板
+
+适用边界：
+
+- 适合：系统总体架构图、分层架构图、链上链下协同架构图等，需要保持传统论文黑白技术图风格。
+- 不适合：需要复杂图标库、宣传海报式视觉或高度装饰化产品图的场景。
+
+模板要点：
+
+- `diagram_type` 固定写 `architecture`
+- guide 来源优先使用 workspace 内冻结的已验收样图和简短规范说明，建议放在 `docs/images/reference_guides_src/architecture/`
+- `reference_guides` 负责收口：
+  - 分层外框
+  - 标题栏
+  - 层内模块横向均匀排布
+  - 连线克制、避免总线和交叉
+- `prompt_override` 只保留：
+  - 当前项目的层名
+  - 模块名
+  - 必须保留的层间关系
+  - 明确禁止的错误连线
+
+### 4.8.3 传统流程图 AI 模板
+
+适用边界：
+
+- 适合：业务流程图、权限校验流程图、查询与审计流程图等，需要用 AI 保持传统论文黑白流程图风格。
+- 不适合：已有稳定 PlantUML/Mermaid 流程源码且输出质量已满足论文要求的场景。
+
+模板要点：
+
+- `diagram_type` 固定写 `flowchart`
+- guide 来源优先使用 workspace 内冻结的已验收样图和简短规范说明，建议放在 `docs/images/reference_guides_src/flowchart/`
+- `reference_guides` 负责收口：
+  - 处理框 / 判断菱形 / 箭头线的画法
+  - 自上而下主线
+  - 分支与回流的紧凑布局
+  - 禁止横向长带、过密节点和多余折线
+- `prompt_override` 只保留：
+  - 当前图的节点文字
+  - 判断分支文字
+  - 节点顺序与回流逻辑
+  - 特殊排版硬约束
+
+### 4.8.4 传统系统功能结构图 AI 模板
+
+适用边界：
+
+- 适合：系统功能结构图、模块结构图、树状功能分解图等，需要保持传统论文树状技术图风格。
+- 不适合：更适合用确定性 SVG/Pillow 自动排版且已经足够稳定的场景。
+
+模板要点：
+
+- `diagram_type` 固定写 `function_structure`
+- guide 来源优先使用 workspace 内冻结的已验收样图和简短规范说明，建议放在 `docs/images/reference_guides_src/function_structure/`
+- `reference_guides` 负责收口：
+  - 顶层居中
+  - 一级横向展开
+  - 二级纵向列示
+  - 矩形框与正交分支线
+  - 禁止多子节点共用含混主干
+- `prompt_override` 只保留：
+  - 当前系统名
+  - 一级模块名
+  - 二级子功能名
+  - 对齐、间距和分支线的项目专属硬约束
+
+补充约束：
+
+- 非 ER 技术图优先走 `reference_guides`；`ER` 图通常继续用 `er_figure_specs + dbdia-er`
+- guide 的 `sources` 推荐只引用 workspace 内冻结资产，不要直接引用 `tmp_*` 目录或运行期 `docs/images/generated_ai/`
+
 ## 5. 最短可用提示
 
 如果你不想每次都贴完整模板，至少可以用这一句：

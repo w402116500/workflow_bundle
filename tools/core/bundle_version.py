@@ -60,6 +60,24 @@ def _latest_semver_tag() -> str:
     return max(candidates, key=_semver_sort_key)
 
 
+def _tag_exists(tag: str) -> bool:
+    if not tag:
+        return False
+    completed = subprocess.run(
+        ["git", "-C", str(PRIMARY_WORKFLOW_ROOT), "rev-parse", "-q", "--verify", f"refs/tags/{tag}"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def _tag_commit(tag: str) -> str:
+    if not tag or not _tag_exists(tag):
+        return ""
+    return _run_git(["rev-list", "-n", "1", tag])
+
+
 def _semver_sort_key(tag: str) -> tuple[int, int, int, int, tuple[tuple[int, int | str], ...]]:
     match = SEMVER_TAG_PATTERN.match(tag)
     if not match:
@@ -83,13 +101,18 @@ def _semver_sort_key(tag: str) -> tuple[int, int, int, int, tuple[tuple[int, int
 
 def bundle_version_info() -> dict[str, Any]:
     version = read_bundle_version()
+    suggested_tag = bundle_version_tag(version)
     commit_full = _run_git(["rev-parse", "HEAD"])
     commit_short = _run_git(["rev-parse", "--short", "HEAD"])
     dirty = bool(_run_git(["status", "--short"]))
     latest_tag = _latest_semver_tag()
+    tag_exists = _tag_exists(suggested_tag)
     return {
         "version": version,
-        "tag": bundle_version_tag(version),
+        "tag": suggested_tag,
+        "suggested_tag": suggested_tag,
+        "tag_exists": tag_exists,
+        "tag_commit": _tag_commit(suggested_tag) if tag_exists else "",
         "version_file": str(BUNDLE_VERSION_FILE),
         "is_prerelease": "-" in version,
         "git_commit": commit_short,

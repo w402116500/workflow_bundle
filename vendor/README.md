@@ -32,7 +32,11 @@
 
 ## `plantuml/`
 
-- 用途：保留给后续 UML 技术图链路
-- 当前状态：不是本次通用 E-R 工作流底座的必需依赖
-
-如果当前变更目标只是通用 `dbdia` E-R 工作流，不应把 `plantuml/` 混入同一次提交。
+- 用途：把 `.puml` 源文件渲染为 UML / 业务流程 SVG，并进一步转换为论文使用的 PNG
+- 当前在工作流中的角色：`plantuml` renderer 的运行时，供 `prepare-figures` 读取 `plantuml_figure_specs` 时使用
+- 应纳管内容：
+  - `lib/plantuml-lgpl-1.2026.2.jar`
+  - `lib/plantuml-lgpl-1.2025.8.jar`（兼容保留）
+- 运行要求：
+  - 需要本机可用 Java Runtime 11+；工作流会自动优先选择满足版本要求的 `java`
+  - 不要求系统额外安装 Graphviz，推荐在 `.puml` 源中显式使用 `!pragma layout smetana` 以获得更稳定的本地布局

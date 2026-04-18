@@ -7,7 +7,7 @@
 ## 2. 单一真源
 
 - 当前 bundle 版本以仓库根目录的 `VERSION` 文件为准。
-- 当前正式版本：`0.5.2`
+- 当前正式版本：`0.6.0`
 - 任何 CLI、summary、handoff 或 release 文档中需要展示版本号时，都应从 `VERSION` 读取，而不是手写常量。
 
 ## 3. 版本号规则
@@ -41,7 +41,7 @@
 3. 运行：
    - `bash workflow_bundle/workflow/scripts/check_bundle_sync.sh`
    - `python3 workflow_bundle/tools/cli.py selftest`
-4. 用 `python3 workflow_bundle/tools/cli.py version` 确认版本号、commit、dirty 状态
+4. 用 `python3 workflow_bundle/tools/cli.py version` 确认版本号、`suggested_tag`、`tag_exists`、commit、dirty 状态
 5. 提交后创建正式 semver tag，例如：
    - `git tag v0.5.0`
    - `git push origin main --tags`
@@ -51,6 +51,12 @@
 - `python3 workflow_bundle/tools/cli.py version`
 - `python3 workflow_bundle/tools/cli.py version --json`
 - `python3 workflow_bundle/tools/cli.py --version`
+
+其中：
+
+- `suggested_tag` 表示根据当前 `VERSION` 推导出的目标 semver tag
+- `tag_exists=true` 才表示该 tag 已经实际存在于 Git 仓库中
+- `latest_semver_tag` 用于查看仓库里当前最近的 semver tag，不等同于 `VERSION`
 
 ## 7. 产物追踪
 

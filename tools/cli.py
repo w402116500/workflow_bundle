@@ -17,6 +17,7 @@ from core.extract import run_extract
 from core.figure_assets import run_prepare_figures
 from core.intake import run_intake
 from core.postprocess_paths import resolve_postprocess_paths
+from core.reference_guides import run_prepare_reference_guides
 from core.release_summary import run_write_build_summary, run_write_finalization_summary, run_write_release_summary
 from core.runtime_state import (
     ACTIVE_WORKSPACE_POINTER_PATH,
@@ -234,6 +235,17 @@ def _print_prepare_ai_figures_result(result: dict[str, Any]) -> None:
         print(f"{item['figure_no']} [{item.get('status', 'prepared')}]: {item['path']}")
 
 
+def _print_prepare_reference_guides_result(result: dict[str, Any]) -> None:
+    print(f"config_path: {result['config_path']}")
+    print(f"output_dir: {result['output_dir']}")
+    print(f"manifest_json: {result['manifest_json']}")
+    print(f"summary_json: {result['summary_json']}")
+    print(f"dry_run: {result['dry_run']}")
+    print(f"prepared_guides: {len(result['prepared_guides'])}")
+    for item in result["prepared_guides"]:
+        print(f"{item['guide_name']} [{item.get('status', 'prepared')}]: {item['output_json']}")
+
+
 def _run_release_build_flow(config_path: Path, output_name: str | None, command_name: str) -> dict[str, Any]:
     def _action() -> dict[str, Any]:
         figure_result = run_prepare_figures(config_path)
@@ -403,6 +415,12 @@ def _build_parser() -> argparse.ArgumentParser:
     prepare_ai_figures_parser.add_argument("--force", action="store_true")
     prepare_ai_figures_parser.add_argument("--dry-run", action="store_true")
 
+    prepare_reference_guides_parser = subparsers.add_parser("prepare-reference-guides", help="Extract reusable reference-diagram guides into local JSON/Markdown files.")
+    prepare_reference_guides_parser.add_argument("--config", type=Path)
+    prepare_reference_guides_parser.add_argument("--guide", action="append", dest="guides")
+    prepare_reference_guides_parser.add_argument("--force", action="store_true")
+    prepare_reference_guides_parser.add_argument("--dry-run", action="store_true")
+
     scaffold_parser = subparsers.add_parser("scaffold", help="Generate chapter skeletons and literature tasks from a workspace config.")
     scaffold_parser.add_argument("--config", type=Path)
 
@@ -512,7 +530,9 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(info, ensure_ascii=False, indent=2))
             return 0
         print(f"version: {info['version']}")
-        print(f"tag: {info['tag']}")
+        print(f"suggested_tag: {info['suggested_tag']}")
+        print(f"tag_exists: {str(info['tag_exists']).lower()}")
+        print(f"tag_commit: {info['tag_commit'] or 'none'}")
         print(f"version_file: {info['version_file']}")
         print(f"is_prerelease: {str(info['is_prerelease']).lower()}")
         print(f"git_commit: {info['git_commit'] or 'unknown'}")
@@ -719,6 +739,30 @@ def main(argv: list[str] | None = None) -> int:
             )(run_prepare_ai_figures(config_path, args.figures, force=args.force, dry_run=args.dry_run)),
         )
         _print_prepare_ai_figures_result(result)
+        return 0
+
+    if args.command == "prepare-reference-guides":
+        config_path = _resolve_config_arg(args.config)
+        result = _run_with_workspace_lock(
+            config_path,
+            "prepare-reference-guides",
+            lambda: (
+                lambda inner: (
+                    _record_workspace_state(
+                        config_path,
+                        "prepare-reference-guides",
+                        {
+                            "guide_count": len(inner["prepared_guides"]),
+                            "dry_run": args.dry_run,
+                            "force": args.force,
+                            "guides": args.guides or [],
+                        },
+                    ),
+                    inner,
+                )[1]
+            )(run_prepare_reference_guides(config_path, args.guides, force=args.force, dry_run=args.dry_run)),
+        )
+        _print_prepare_reference_guides_result(result)
         return 0
 
     if args.command == "scaffold":

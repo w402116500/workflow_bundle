@@ -11,6 +11,8 @@
 
 ## 当前记录
 
+- `v0.6.0.md`
+  - 新增 `prepare-reference-guides` 正式入口，收口 guide 抽取、guide 驱动 AI 技术图与 PlantUML/ER 图共存的通用发布版本。
 - `v0.5.2.md`
   - 修复通用 `dbdia-er` E-R fallback 在多关系场景下的重复关系名问题，并补齐回归覆盖。
 - `v0.5.1.md`

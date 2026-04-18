@@ -6,6 +6,7 @@
   - `python3 workflow_bundle/tools/cli.py resume --config <workspace.json>`
   - 若输出 `workflow_signature_status: drifted`：`python3 workflow_bundle/tools/cli.py sync-workflow-assets --config <workspace.json>`
   - 如需刷新 handoff：`python3 workflow_bundle/tools/cli.py refresh-handoff --config <workspace.json>`
+  - 如需先把教程图/样图抽成结构化规范（推荐用于用例图/架构图/流程图/功能结构图；ER 图继续走 `dbdia-er`）：`python3 workflow_bundle/tools/cli.py prepare-reference-guides --config <workspace.json>`
   - 如需先准备 AI 插图：`python3 workflow_bundle/tools/cli.py prepare-ai-figures --config <workspace.json>`
   - 如需显式生成本地 `dbdia` E-R 图：先在 workspace config 中补 `er_figure_specs`，再执行 `python3 workflow_bundle/tools/cli.py prepare-figures --config <workspace.json>`
   - 进入发布链路：`python3 workflow_bundle/tools/cli.py release-preflight --config <workspace.json>` -> `python3 workflow_bundle/tools/cli.py release-build --config <workspace.json>` -> `python3 workflow_bundle/tools/cli.py release-verify --config <workspace.json>`
@@ -71,6 +72,8 @@
 - `python3 workflow_bundle/tools/cli.py prepare-chapter --config <workspace.json> --chapter <chapter-file>`
 - `python3 workflow_bundle/tools/cli.py start-chapter --config <workspace.json> --chapter <chapter-file>`
 - `python3 workflow_bundle/tools/cli.py finalize-chapter --config <workspace.json> --chapter <chapter-file>`
+- `python3 workflow_bundle/tools/cli.py prepare-reference-guides --config <workspace.json> [--guide <guide-name>] [--force] [--dry-run]`
+  - 推荐优先用于 `use_case`、`architecture`、`flowchart`、`function_structure`；`ER` 图通常继续走本地 `dbdia-er`
 - `python3 workflow_bundle/tools/cli.py normalize-citations --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py prepare-ai-figures --config <workspace.json> [--fig <图号>] [--force] [--dry-run]`
 - `python3 workflow_bundle/tools/cli.py check-workspace --config <workspace.json>`

@@ -96,7 +96,18 @@
     "output_dir": "docs/images/generated_ai",
     "auto_generate_on_prepare_figures": false
   },
+  "reference_extraction": {
+    "enabled": false,
+    "provider": "zetatechs-gemini",
+    "base_url": "https://api.zetatechs.com",
+    "api_key_env": "NEWAPI_API_KEY",
+    "default_model": "gemini-3.1-flash-image-preview",
+    "timeout_sec": 180,
+    "output_dir": "docs/images/reference_guides"
+  },
   "ai_figure_specs": {},
+  "reference_guide_specs": {},
+  "plantuml_figure_specs": {},
   "er_figure_specs": {},
   "figure_map": {},
   "metadata": {
@@ -115,6 +126,22 @@
 - `docs/materials/material_pack.json` 不只承载 `summary/evidence`，还承载结构化 `assets`，用于图表、结构化索引和测试证据抽取。
 - `docs/materials/code_evidence_pack.json` / `code_evidence_pack.md` 是第 5 章的代码证据索引，配套真实代码片段与白底黑字代码截图目录。
 - `image_generation` 用于声明 AI 生图提供方和默认模型参数；当前工作流默认走 `zetatechs-gemini` provider，通过 Gemini Generate Content 生图；仍兼容 `zetatechs` / `zetatechs-openai-image` 的 OpenAI Image 路径。API key 建议只通过环境变量传入，不写进 workspace config。
+- `reference_extraction` 用于声明“参考图规范抽取”阶段的 provider、模型与产物输出目录。该阶段负责先把教程 Markdown / 样图抽成 guide JSON/Markdown，再供 `prepare-ai-figures` 消费。当前 v1 仅支持 `zetatechs-gemini`。
+- `reference_guide_specs` 用于按 guide 名声明哪些教程材料要先抽取成通用图法规范。
+  常用字段包括：
+  - `guide_type`
+  - `description`
+  - `enabled`
+  - `model`
+  - `sources`
+  - `extract_focus`
+  `sources` 的元素支持：
+  - `kind = markdown | image`
+  - `path`
+  - `role`
+  - `note`
+  guide 产物默认落到 `docs/images/reference_guides/`，每个 guide 会输出一份 `.json` 和一份 `.md`。
+  如需让 guide 具备可重复生成性，建议先把参考图片和说明文档冻结到 workspace 内，例如 `docs/images/reference_guides_src/<diagram-family>/`，再从该目录抽取 guide；不要直接引用 `tmp_*` 临时目录或运行期 `docs/images/generated_ai/` 产物。
 - `ai_figure_specs` 用于按图号声明哪些插图走 AI 生成，以及这些图的意图、章节归属和是否覆盖内置生成图。
   常用字段包括：
   - `caption`
@@ -124,6 +151,7 @@
   - `style_notes`
   - `enabled`
   - `override_builtin`
+  - `reference_guides`
   其中 `diagram_type` 推荐使用：
   - `use_case`
   - `function_structure`
@@ -132,8 +160,18 @@
   - `er`
   - `architecture`
   `style_notes` 用于补充对参考图风格、布局方式、线框样式、图标使用边界等具体要求。
+  `reference_guides` 用于声明当前图号要消费哪些已抽取好的 guide；如果声明了 guide 但 guide JSON 不存在或相对当前 guide spec 已过期，`prepare-ai-figures` 会直接失败。
+  当前推荐优先对 `use_case`、`architecture`、`flowchart`、`function_structure` 这类 AI 技术图启用 `reference_guides`；`er` 图通常继续走 `er_figure_specs + dbdia-er` 的确定性链路。
   AI 图默认应只生成图主体本身，不在 PNG 内嵌图号、图题、章节名、页眉页脚或 `Fig.` / `Figure`。论文题注由正文和导出流程统一插入。
   `enabled=false` 可用于按图号关闭 AI 覆盖并回退到 `prepare-figures` 的确定性生成结果，适合额度不足、质量不稳或该图不适合 AI 生成的场景。
+- `plantuml_figure_specs` 用于按图号显式声明哪些流程图、用例图或 UML 图走本地 `PlantUML`。该字段是**输入配置**，适合需要传统正式图法、且希望保留可重复生成源码的项目。
+  常用字段包括：
+  - `caption`
+  - `source_path`
+  - `enabled`
+  - `override_builtin`（可选，默认 `true`，用于覆盖同图号内置图）
+  - `output_name`（可选，默认 `generated/fig<图号>-plantuml.png`）
+  `source_path` 指向 workspace 根目录相对路径下的 `.puml` 源文件；启用后 `prepare-figures` 会在 `docs/images/generated_src/` 额外写出 `.puml/.svg` 侧车文件。当前 renderer 会自动查找 Java 11+ 运行时，建议在 `.puml` 中显式声明 `!pragma layout smetana` 以获得更稳定的本地布局。
 - `er_figure_specs` 用于按图号显式声明哪些 E-R 图走本地 `dbdia-er`。该字段是**输入配置**，适合需要传统 Chen 风格 E-R 图、且不想依赖 Mermaid `erDiagram` 自动提取的项目。
   常用字段包括：
   - `caption`
@@ -233,6 +271,7 @@
 - `python3 workflow_bundle/tools/cli.py prepare-chapter --config <workspace.json> --chapter <chapter-file>`
 - `python3 workflow_bundle/tools/cli.py start-chapter --config <workspace.json> --chapter <chapter-file>`
 - `python3 workflow_bundle/tools/cli.py finalize-chapter --config <workspace.json> --chapter <chapter-file>`
+- `python3 workflow_bundle/tools/cli.py prepare-reference-guides --config <workspace.json> [--guide <guide-name>]`
 - `python3 workflow_bundle/tools/cli.py prepare-ai-figures --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py lock-status --config <workspace.json>`
 - `python3 workflow_bundle/tools/cli.py clear-lock --config <workspace.json> --force`

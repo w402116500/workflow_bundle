@@ -12,6 +12,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from core.project_common import CHAIN_LABELS, load_workspace_context, make_relative, read_json, write_json
+from core.reference_guides import load_reference_guides_for_names, reference_guide_dependency_entries
 
 
 AI_IMAGE_SCHEMA_VERSION = 1
@@ -84,6 +85,20 @@ def _normalize_reference_images(raw_items: Any, workspace_root: Path) -> list[di
     return normalized
 
 
+def _normalize_reference_guide_names(raw_items: Any) -> list[str]:
+    normalized: list[str] = []
+    for raw in raw_items or []:
+        if isinstance(raw, str):
+            name = raw.strip()
+        elif isinstance(raw, dict):
+            name = str(raw.get("name", "") or raw.get("guide", "") or "").strip()
+        else:
+            name = ""
+        if name and name not in normalized:
+            normalized.append(name)
+    return normalized
+
+
 def _normalize_ai_spec(figure_no: str, raw_spec: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
     spec = dict(raw_spec)
     workspace_root = defaults["workspace_root"]
@@ -100,6 +115,7 @@ def _normalize_ai_spec(figure_no: str, raw_spec: dict[str, Any], defaults: dict[
         "quality": str(spec.get("quality", "") or defaults["default_quality"]).strip(),
         "size": str(spec.get("size", "") or defaults["default_size"]).strip(),
         "prompt_override": str(spec.get("prompt_override", "") or "").strip(),
+        "reference_guides": _normalize_reference_guide_names(spec.get("reference_guides") or []),
         "reference_images": _normalize_reference_images(spec.get("reference_images") or [], workspace_root),
     }
 
@@ -157,23 +173,74 @@ def _save_prompt_manifest(config: dict[str, Any], workspace_root: Path, manifest
     return manifest_path
 
 
-def _build_prompt(metadata: dict[str, Any], spec: dict[str, Any]) -> str:
+def _reference_guide_prompt_block(guides: list[dict[str, Any]]) -> str:
+    if not guides:
+        return ""
+    blocks: list[str] = []
+    for index, guide in enumerate(guides, start=1):
+        lines = [
+            f"参考规范 {index}：{guide.get('guide_name', '') or 'unnamed-guide'}",
+        ]
+        guide_type = str(guide.get("guide_type", "") or "").strip()
+        if guide_type:
+            lines.append(f"类型：{guide_type}")
+        summary = str(guide.get("summary", "") or "").strip()
+        if summary:
+            lines.append(f"摘要：{summary}")
+        sections = [
+            ("符号规范", guide.get("symbol_rules") or []),
+            ("布局规范", guide.get("layout_rules") or []),
+            ("关系规范", guide.get("relationship_rules") or []),
+            ("文字规范", guide.get("text_rules") or []),
+            ("禁止项", guide.get("forbidden_rules") or []),
+            ("常见误判点", guide.get("common_failure_modes") or []),
+        ]
+        for label, items in sections:
+            cleaned = [str(item).strip() for item in items if str(item).strip()]
+            if cleaned:
+                lines.append(f"{label}：" + "；".join(cleaned[:8]))
+        prompt_fragments = guide.get("prompt_fragments") or {}
+        for label, key in (
+            ("Prompt 必须项", "must"),
+            ("Prompt 禁止项", "avoid"),
+            ("Prompt 布局项", "layout"),
+            ("Prompt 风格项", "style"),
+            ("Prompt 文字项", "text"),
+        ):
+            cleaned = [str(item).strip() for item in (prompt_fragments.get(key) or []) if str(item).strip()]
+            if cleaned:
+                lines.append(f"{label}：" + "；".join(cleaned[:8]))
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def _reference_image_prompt_block(spec: dict[str, Any]) -> str:
+    reference_lines = []
+    for index, ref in enumerate(spec.get("reference_images") or [], start=1):
+        note = str(ref.get("note", "") or "").strip()
+        role = str(ref.get("role", "") or "").strip()
+        segments = [f"参考图{index}"]
+        if role:
+            segments.append(f"角色：{role}")
+        if note:
+            segments.append(f"要求：{note}")
+        reference_lines.append("；".join(segments))
+    if not reference_lines:
+        return ""
+    return "参考图使用说明：" + " | ".join(reference_lines)
+
+
+def _build_prompt(metadata: dict[str, Any], spec: dict[str, Any], reference_guides: list[dict[str, Any]] | None = None) -> str:
+    reference_guides = reference_guides or []
     if spec["prompt_override"]:
-        prompt = spec["prompt_override"]
-        if spec.get("reference_images"):
-            reference_lines = []
-            for index, ref in enumerate(spec.get("reference_images") or [], start=1):
-                note = str(ref.get("note", "") or "").strip()
-                role = str(ref.get("role", "") or "").strip()
-                segments = [f"参考图{index}"]
-                if role:
-                    segments.append(f"角色：{role}")
-                if note:
-                    segments.append(f"要求：{note}")
-                reference_lines.append("；".join(segments))
-            if reference_lines:
-                prompt = prompt.rstrip() + "\n\n参考图使用说明：" + " | ".join(reference_lines)
-        return prompt
+        parts = [spec["prompt_override"]]
+        guide_block = _reference_guide_prompt_block(reference_guides)
+        if guide_block:
+            parts.append(guide_block)
+        image_block = _reference_image_prompt_block(spec)
+        if image_block:
+            parts.append(image_block)
+        return "\n\n".join(part for part in parts if part.strip())
 
     chain_platform = str(metadata.get("chain_platform", "") or "").strip().lower()
     chain_label = CHAIN_LABELS.get(chain_platform, chain_platform.upper()) if chain_platform else "区块链"
@@ -210,6 +277,8 @@ def _build_prompt(metadata: dict[str, Any], spec: dict[str, Any]) -> str:
     ]
     if spec["chapter"]:
         parts.append(f"所属章节：{spec['chapter']}")
+    if reference_guides:
+        parts.append("已附参考图规范摘要，请优先继承这些已抽取的符号、布局、关系和禁止项，不要退化成只看示例图像素。")
     if spec.get("reference_images"):
         parts.append("已附参考图，请只继承其布局组织、线框风格与模块分组方式，不要照搬旧图中的标题、噪点、装饰或错误文字。")
     parts.extend(
@@ -292,23 +361,24 @@ def _build_prompt(metadata: dict[str, Any], spec: dict[str, Any]) -> str:
 
     if spec.get("style_notes"):
         parts.append(f"补充风格要求：{spec['style_notes']}")
+    guide_block = _reference_guide_prompt_block(reference_guides)
+    if guide_block:
+        parts.append("参考图规范摘要：\n" + guide_block)
     if spec.get("reference_images"):
-        reference_lines = []
-        for index, ref in enumerate(spec.get("reference_images") or [], start=1):
-            note = str(ref.get("note", "") or "").strip()
-            role = str(ref.get("role", "") or "").strip()
-            segments = [f"参考图{index}"]
-            if role:
-                segments.append(f"角色：{role}")
-            if note:
-                segments.append(f"要求：{note}")
-            reference_lines.append("；".join(segments))
-        if reference_lines:
-            parts.append("参考图使用说明：" + " | ".join(reference_lines))
+        image_block = _reference_image_prompt_block(spec)
+        if image_block:
+            parts.append(image_block)
     return "\n".join(part for part in parts if part.strip())
 
 
-def _spec_hash(settings: dict[str, Any], metadata: dict[str, Any], spec: dict[str, Any], prompt: str) -> str:
+def _spec_hash(
+    settings: dict[str, Any],
+    metadata: dict[str, Any],
+    spec: dict[str, Any],
+    prompt: str,
+    reference_guides: list[dict[str, Any]] | None = None,
+) -> str:
+    reference_guides = reference_guides or []
     reference_payload: list[dict[str, Any]] = []
     for ref in spec.get("reference_images") or []:
         abs_path = Path(ref["abs_path"])
@@ -321,6 +391,15 @@ def _spec_hash(settings: dict[str, Any], metadata: dict[str, Any], spec: dict[st
                 "content_hash": content_hash,
             }
         )
+    guide_payload = [
+        {
+            "guide_name": str(guide.get("guide_name", "") or ""),
+            "guide_type": str(guide.get("guide_type", "") or ""),
+            "summary": str(guide.get("summary", "") or ""),
+            "spec_hash": str(guide.get("spec_hash", "") or ""),
+        }
+        for guide in reference_guides
+    ]
     payload = {
         "schema_version": AI_IMAGE_SCHEMA_VERSION,
         "provider": settings["provider"],
@@ -336,6 +415,7 @@ def _spec_hash(settings: dict[str, Any], metadata: dict[str, Any], spec: dict[st
         "quality": spec["quality"],
         "size": spec["size"],
         "override_builtin": spec["override_builtin"],
+        "reference_guides": guide_payload,
         "reference_images": reference_payload,
         "project_title": metadata.get("title", ""),
         "chain_platform": metadata.get("chain_platform", ""),
@@ -388,6 +468,11 @@ def _validate_prepare_request(
                 raise RuntimeError(
                     f"ai_figure_specs.{figure_no}.reference_images path does not exist: {ref['path']}"
                 )
+        spec["reference_guide_payloads"] = load_reference_guides_for_names(
+            config,
+            workspace_root,
+            spec.get("reference_guides") or [],
+        )
 
     return settings, filtered
 
@@ -613,6 +698,16 @@ def ai_override_blocking_entries(config_path: Path) -> list[dict[str, Any]]:
     ]
     entries: list[dict[str, Any]] = []
     for spec in overrides:
+        for guide_entry in reference_guide_dependency_entries(config, workspace_root, spec.get("reference_guides") or []):
+            entries.append(
+                {
+                    "figure_no": spec["figure_no"],
+                    "caption": spec["caption"],
+                    "expected_path": guide_entry["expected_path"],
+                    "guide_name": guide_entry["guide_name"],
+                    "reason": guide_entry["reason"],
+                }
+            )
         output_rel, output_path = ai_figure_output_paths(config, workspace_root, spec["figure_no"])
         if output_path.exists():
             continue
@@ -633,8 +728,9 @@ def ai_override_map(config: dict[str, Any], workspace_root: Path) -> dict[str, d
     for spec in _enabled_ai_specs(config, workspace_root).values():
         if not spec["override_builtin"] or spec["figure_no"] not in BUILTIN_GENERATED_FIGURE_NUMBERS:
             continue
-        prompt = _build_prompt(config.get("metadata", {}) or {}, spec)
-        spec_hash = _spec_hash(settings, config.get("metadata", {}) or {}, spec, prompt)
+        reference_guides = load_reference_guides_for_names(config, workspace_root, spec.get("reference_guides") or [])
+        prompt = _build_prompt(config.get("metadata", {}) or {}, spec, reference_guides)
+        spec_hash = _spec_hash(settings, config.get("metadata", {}) or {}, spec, prompt, reference_guides)
         output_rel, output_path = ai_figure_output_paths(config, workspace_root, spec["figure_no"])
         overrides[spec["figure_no"]] = {
             "figure_no": spec["figure_no"],
@@ -672,8 +768,9 @@ def run_prepare_ai_figures(
     processed: list[dict[str, Any]] = []
     for figure_no in sorted(specs):
         spec = specs[figure_no]
-        prompt = _build_prompt(metadata, spec)
-        spec_hash = _spec_hash(settings, metadata, spec, prompt)
+        reference_guides = list(spec.get("reference_guide_payloads") or [])
+        prompt = _build_prompt(metadata, spec, reference_guides)
+        spec_hash = _spec_hash(settings, metadata, spec, prompt, reference_guides)
         output_rel, output_path = ai_figure_output_paths(config, workspace_root, figure_no)
         existing_manifest = prompt_entries.get(figure_no, {})
         status = "generated"
@@ -698,6 +795,14 @@ def run_prepare_ai_figures(
             "model": spec["model"],
             "quality": spec["quality"],
             "size": spec["size"],
+            "reference_guides": [
+                {
+                    "guide_name": str(guide.get("guide_name", "") or ""),
+                    "guide_type": str(guide.get("guide_type", "") or ""),
+                    "spec_hash": str(guide.get("spec_hash", "") or ""),
+                }
+                for guide in reference_guides
+            ],
             "reference_images": [
                 {
                     "path": str(ref.get("path", "") or ""),

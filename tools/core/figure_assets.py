@@ -36,6 +36,8 @@ DBDIA_ANTLR_RUNTIME_VERSION = "4.8-1"
 DBDIA_ANTLR_RUNTIME_JAR = DBDIA_VENDOR_ROOT / "lib" / f"antlr4-runtime-{DBDIA_ANTLR_RUNTIME_VERSION}.jar"
 GRAPHVIZ_WASM_VENDOR_ROOT = VENDOR_ROOT / "graphviz_wasm"
 GRAPHVIZ_RENDER_SCRIPT = GRAPHVIZ_WASM_VENDOR_ROOT / "render_dot.mjs"
+PLANTUML_VENDOR_ROOT = VENDOR_ROOT / "plantuml"
+PLANTUML_LIB_DIR = PLANTUML_VENDOR_ROOT / "lib"
 
 MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)\n```", re.S)
 HEADING_L2_RE = re.compile(r"^##\s+5\.(?P<num>\d+)\s+(?P<title>.+?)\s*$")
@@ -44,6 +46,7 @@ FUNCTION_STRUCTURE_RENDERER_VERSION = "v2-monochrome-module-tree"
 DBDIA_ER_RENDERER_VERSION = "v2-generic-dbdia-chen-vendor-vizjs-no-adopt-rerender"
 USE_CASE_RENDERER_VERSION = "v3-clustered-uml-use-case"
 ARCHITECTURE_RENDERER_VERSION = "v1-layered-domain-fallback-architecture"
+PLANTUML_RENDERER_VERSION = "v1-vendored-plantuml-source-driven"
 SVG_RENDER_WIDTH_PX = 1665
 
 
@@ -62,6 +65,7 @@ class FigureSpec:
     code: str
     renderer: str = "mermaid"
     source_paths: tuple[Path, ...] = ()
+    override_builtin: bool = True
 
 
 def _iter_manifest_documents(manifest: dict[str, Any]) -> list[Path]:
@@ -948,6 +952,59 @@ def _resolve_java_tool(name: str) -> str:
     raise RuntimeError(f"required Java tool not found: {name}")
 
 
+def _java_major_version(java_bin: str) -> int | None:
+    try:
+        completed = subprocess.run(
+            [java_bin, "-version"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return None
+    version_text = "\n".join(part for part in [completed.stdout, completed.stderr] if part).strip()
+    match = re.search(r'version "(?P<version>[^"]+)"', version_text)
+    if not match:
+        return None
+    raw_version = match.group("version").strip()
+    if raw_version.startswith("1."):
+        legacy_match = re.match(r"1\.(\d+)", raw_version)
+        return int(legacy_match.group(1)) if legacy_match else None
+    modern_match = re.match(r"(\d+)", raw_version)
+    return int(modern_match.group(1)) if modern_match else None
+
+
+def _resolve_java_runtime(min_major: int) -> str:
+    candidates: list[str] = []
+    default_java = shutil.which("java")
+    if default_java:
+        candidates.append(default_java)
+
+    for pattern in (
+        "/usr/lib/jvm/*/bin/java",
+        "/usr/local/jdk*/bin/java",
+        "/usr/local/openjdk*/bin/java",
+    ):
+        for path in sorted(Path("/").glob(pattern.lstrip("/"))):
+            candidate = str(path)
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+    viable: list[tuple[int, str]] = []
+    for candidate in candidates:
+        major = _java_major_version(candidate)
+        if major is None or major < min_major:
+            continue
+        viable.append((major, candidate))
+
+    if viable:
+        viable.sort(key=lambda item: (-item[0], item[1]))
+        return viable[0][1]
+
+    available = ", ".join(f"{candidate}:{_java_major_version(candidate) or 'unknown'}" for candidate in candidates) or "none"
+    raise RuntimeError(f"required Java runtime >= {min_major} not found; available candidates: {available}")
+
+
 def _preferred_dbdia_font_name() -> str:
     candidates = [
         ("WenQuanYi Zen Hei", "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
@@ -973,6 +1030,10 @@ def _resolve_workspace_path(workspace_root: Path, raw_path: str) -> Path:
 
 def _default_er_output_name(figure_no: str) -> str:
     return f"generated/fig{_figure_no_slug(figure_no)}-er-diagram.png"
+
+
+def _default_plantuml_output_name(figure_no: str) -> str:
+    return f"generated/fig{_figure_no_slug(figure_no)}-plantuml.png"
 
 
 def _build_configured_er_specs(config: dict[str, Any], workspace_root: Path) -> dict[str, FigureSpec]:
@@ -1020,22 +1081,73 @@ def _build_configured_er_specs(config: dict[str, Any], workspace_root: Path) -> 
     return explicit_specs
 
 
+def _build_configured_plantuml_specs(config: dict[str, Any], workspace_root: Path) -> dict[str, FigureSpec]:
+    raw_specs = config.get("plantuml_figure_specs") or {}
+    if not isinstance(raw_specs, dict):
+        raise RuntimeError("plantuml_figure_specs must be an object keyed by figure number")
+
+    existing_figure_map = config.get("figure_map") or {}
+    explicit_specs: dict[str, FigureSpec] = {}
+    for raw_figure_no, raw_spec in raw_specs.items():
+        figure_no = str(raw_figure_no).strip()
+        if not figure_no:
+            raise RuntimeError("plantuml_figure_specs contains an empty figure number key")
+        if not isinstance(raw_spec, dict):
+            raise RuntimeError(f"plantuml_figure_specs.{figure_no} must be an object")
+        if raw_spec.get("enabled", True) is False:
+            continue
+
+        source_rel = str(raw_spec.get("source_path") or "").strip()
+        if not source_rel:
+            raise RuntimeError(f"plantuml_figure_specs.{figure_no}.source_path is required")
+        source_path = _resolve_workspace_path(workspace_root, source_rel)
+        if not source_path.exists():
+            raise RuntimeError(f"plantuml_figure_specs.{figure_no}.source_path not found: {source_path}")
+
+        caption = str(raw_spec.get("caption") or "").strip()
+        if not caption:
+            existing_cfg = existing_figure_map.get(figure_no, {}) if isinstance(existing_figure_map.get(figure_no), dict) else {}
+            caption = str(existing_cfg.get("caption") or "").strip()
+        if not caption:
+            raise RuntimeError(f"plantuml_figure_specs.{figure_no}.caption is required")
+
+        output_name = str(raw_spec.get("output_name") or "").strip() or _default_plantuml_output_name(figure_no)
+        if Path(output_name).is_absolute():
+            raise RuntimeError(f"plantuml_figure_specs.{figure_no}.output_name must be relative to build.diagram_dir")
+
+        explicit_specs[figure_no] = FigureSpec(
+            figure_no=figure_no,
+            caption=caption,
+            output_name=output_name,
+            code=source_path.read_text(encoding="utf-8", errors="replace"),
+            renderer="plantuml",
+            source_paths=(source_path,),
+            override_builtin=raw_spec.get("override_builtin", True) is not False,
+        )
+    return explicit_specs
+
+
 def _merge_explicit_specs(default_specs: list[FigureSpec], explicit_specs: dict[str, FigureSpec]) -> list[FigureSpec]:
     if not explicit_specs:
         return default_specs
 
     merged: list[FigureSpec] = []
     replaced: set[str] = set()
+    default_numbers = {spec.figure_no for spec in default_specs}
     for spec in default_specs:
         override = explicit_specs.get(spec.figure_no)
-        if override is not None:
+        if override is not None and override.override_builtin:
             merged.append(override)
             replaced.add(spec.figure_no)
         else:
             merged.append(spec)
 
     for figure_no, spec in explicit_specs.items():
-        if figure_no not in replaced:
+        if figure_no in replaced:
+            continue
+        if figure_no in default_numbers and not spec.override_builtin:
+            continue
+        if figure_no not in default_numbers:
             merged.append(spec)
     return merged
 
@@ -1639,11 +1751,90 @@ def _render_dbdia_er_diagram_png(spec: FigureSpec, output_path: Path, workspace_
             image.convert("RGB").save(output_path)
 
 
+def _resolve_plantuml_jar() -> Path:
+    preferred = [
+        PLANTUML_LIB_DIR / "plantuml-lgpl-1.2026.2.jar",
+        PLANTUML_LIB_DIR / "plantuml-lgpl-1.2025.8.jar",
+    ]
+    for path in preferred:
+        if path.exists():
+            return path
+
+    jars = sorted(PLANTUML_LIB_DIR.glob("plantuml-lgpl-*.jar"))
+    if jars:
+        return jars[-1]
+    raise RuntimeError(f"plantuml runtime jar not found under {PLANTUML_LIB_DIR}")
+
+
+def _render_plantuml_png(spec: FigureSpec, output_path: Path, workspace_root: Path) -> None:
+    plantuml_jar = _resolve_plantuml_jar()
+    java = _resolve_java_runtime(min_major=11)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    stem = Path(spec.output_name).stem
+    sidecar_dir = workspace_root / "docs" / "images" / "generated_src"
+    puml_path = sidecar_dir / f"{stem}.puml"
+    svg_path = sidecar_dir / f"{stem}.svg"
+
+    puml_code = spec.code.strip() + "\n"
+    _write_text_if_changed(puml_path, puml_code)
+
+    _run_checked(
+        [
+            java,
+            "-Djava.awt.headless=true",
+            "-jar",
+            str(plantuml_jar),
+            "-charset",
+            "UTF-8",
+            "-tsvg",
+            str(puml_path),
+        ],
+        cwd=sidecar_dir,
+        label="plantuml svg render",
+    )
+
+    if not svg_path.exists():
+        raise RuntimeError(f"plantuml did not emit expected svg: {svg_path}")
+
+    cairosvg.svg2png(url=str(svg_path), write_to=str(output_path), output_width=SVG_RENDER_WIDTH_PX)
+    with Image.open(output_path) as image:
+        if image.mode == "RGBA":
+            canvas = Image.new("RGB", image.size, (255, 255, 255))
+            canvas.paste(image, mask=image.getchannel("A"))
+            canvas.save(output_path)
+        else:
+            image.convert("RGB").save(output_path)
+
+
+def _expected_sidecar_paths(spec: FigureSpec, workspace_root: Path) -> list[Path]:
+    stem = Path(spec.output_name).stem
+    sidecar_dir = workspace_root / "docs" / "images" / "generated_src"
+    if spec.renderer == "dbdia-er":
+        return [
+            sidecar_dir / f"{stem}.dbdia",
+            sidecar_dir / f"{stem}.dot",
+            sidecar_dir / f"{stem}.svg",
+        ]
+    if spec.renderer == "plantuml":
+        return [
+            sidecar_dir / f"{stem}.puml",
+            sidecar_dir / f"{stem}.svg",
+        ]
+    return []
+
+
+def _has_required_sidecars(spec: FigureSpec, workspace_root: Path) -> bool:
+    paths = _expected_sidecar_paths(spec, workspace_root)
+    return all(path.exists() for path in paths)
+
+
 def _build_specs(config: dict[str, Any], manifest: dict[str, Any], workspace_root: Path) -> list[FigureSpec]:
     docs = _iter_manifest_documents(manifest)
     overview_doc = _pick_doc_by_keyword(docs, "总体项目文档")
     database_doc = _pick_doc_by_keyword(docs, "数据库设计文档")
     explicit_er_specs = _build_configured_er_specs(config, workspace_root)
+    explicit_plantuml_specs = _build_configured_plantuml_specs(config, workspace_root)
 
     overview_blocks = _extract_mermaid_blocks(overview_doc) if overview_doc else []
     database_blocks = _extract_mermaid_blocks(database_doc) if database_doc else []
@@ -1729,7 +1920,8 @@ def _build_specs(config: dict[str, Any], manifest: dict[str, Any], workspace_roo
     if flowchart and not any(spec.figure_no == "4.4" and spec.code == flowchart.code for spec in specs):
         # Keep the original end-to-end business flow as an auxiliary fallback for future projects.
         pass
-    return _merge_explicit_specs(specs, explicit_er_specs)
+    merged = _merge_explicit_specs(specs, explicit_er_specs)
+    return _merge_explicit_specs(merged, explicit_plantuml_specs)
 
 
 def _figure_spec_hash(spec: FigureSpec, config: dict[str, Any], manifest: dict[str, Any], workspace_root: Path) -> str:
@@ -1756,6 +1948,9 @@ def _figure_spec_hash(spec: FigureSpec, config: dict[str, Any], manifest: dict[s
     elif spec.renderer == "pillow-architecture":
         payload["renderer_version"] = ARCHITECTURE_RENDERER_VERSION
         payload["architecture_payload"] = json.loads(spec.code) if spec.code else {}
+    elif spec.renderer == "plantuml":
+        payload["renderer_version"] = PLANTUML_RENDERER_VERSION
+        payload["plantuml_code"] = spec.code
     else:
         payload["code"] = spec.code
     serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
@@ -1765,7 +1960,7 @@ def _figure_spec_hash(spec: FigureSpec, config: dict[str, Any], manifest: dict[s
 def _can_adopt_existing_output(spec: FigureSpec, output_path: Path) -> bool:
     if not output_path.exists():
         return False
-    if spec.renderer in {"pillow", "use_case", "pillow-architecture", "dbdia-er"}:
+    if spec.renderer in {"pillow", "use_case", "pillow-architecture", "dbdia-er", "plantuml"}:
         return False
     if not spec.source_paths:
         return True
@@ -1832,9 +2027,14 @@ def run_prepare_figures(config_path: Path) -> dict[str, Any]:
             )
             continue
 
-        if output_path.exists() and existing_cfg.get("spec_hash") == spec_hash and existing_cfg.get("path") == relative_output_path:
+        if (
+            output_path.exists()
+            and existing_cfg.get("spec_hash") == spec_hash
+            and existing_cfg.get("path") == relative_output_path
+            and _has_required_sidecars(spec, workspace_root)
+        ):
             status = "cached"
-        elif output_path.exists() and _can_adopt_existing_output(spec, output_path):
+        elif output_path.exists() and _can_adopt_existing_output(spec, output_path) and _has_required_sidecars(spec, workspace_root):
             status = "adopted"
         else:
             if spec.renderer == "pillow":
@@ -1847,6 +2047,8 @@ def run_prepare_figures(config_path: Path) -> dict[str, Any]:
                 _render_use_case_diagram_png(json.loads(spec.code), output_path)
             elif spec.renderer == "pillow-architecture":
                 _render_architecture_png(json.loads(spec.code), output_path)
+            elif spec.renderer == "plantuml":
+                _render_plantuml_png(spec, output_path, workspace_root)
             else:
                 _render_mermaid_png(spec.code, output_path)
         figure_map[spec.figure_no] = {

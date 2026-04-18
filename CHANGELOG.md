@@ -1,7 +1,30 @@
 # Changelog
 
-本文件从 `0.5.0` 开始维护结构化版本记录，当前最新版本为 `0.5.2`。
+本文件从 `0.5.0` 开始维护结构化版本记录，当前最新版本为 `0.6.0`。
 更早的历史提交与中文 milestone tag 仍然存在于 Git 历史中，但未形成统一 changelog；从当前版本起，正式 release 以语义化版本号为准。
+
+## [0.6.0] - 2026-04-18
+
+### Added
+
+- 新增 `python3 workflow_bundle/tools/cli.py prepare-reference-guides`，将参考图规范抽取收口为正式 CLI 阶段。
+- 新增 `tools/core/reference_guides.py`，提供 `reference_extraction` / `reference_guide_specs` 的解析、guide 产物生成、缓存与依赖校验。
+- 为 `prepare-reference-guides` 新增 `guide_type=function_structure` 的正式抽取提示与回归覆盖。
+- 新增 `docs/releases/v0.6.0.md`，记录本次 minor 版本发布说明。
+
+### Changed
+
+- 对 `use_case`、`architecture`、`flowchart`、`function_structure` 这类 AI 技术图，文档与模板现统一推荐先把参考资产冻结到 `docs/images/reference_guides_src/`，再抽取 `reference_guides`。
+- `workflow/06-ai-prompt-guide.md` 新增传统分层架构图、传统流程图、传统系统功能结构图的 guide 驱动模板，并明确 `ER` 图通常继续走 `dbdia-er`。
+- `workflow/WORKSPACE_SPEC.md`、`workflow/templates/workspace-config.template.json` 与 `workflow/configs/current_workspace.json` 新增：
+  - `reference_extraction`
+  - `reference_guide_specs`
+  - `plantuml_figure_specs`
+  - `ai_figure_specs.<fig>.reference_guides`
+- `workflow/configs/current_workspace.json` 与 `workflow/templates/workspace-config.template.json` 新增稳定 guide source 的官方示例写法。
+- `python3 workflow_bundle/tools/cli.py version` 现显式输出 `suggested_tag`、`tag_exists` 与 `tag_commit`，避免把 `VERSION` 推导出来的目标 tag 误判成仓库里已存在的 tag。
+- `prepare-figures` 对 `plantuml` / `dbdia-er` 渲染链统一校验 sidecar，并为 vendored PlantUML 自动选择 Java 11+ 运行时。
+- 当前 bundle 正式版本提升为 `0.6.0`。
 
 ## [0.5.2] - 2026-04-18
 
@@ -48,6 +71,8 @@
 
 ## Historical Tags
 
+- `v0.6.0`
+- `v0.5.2`
 - `v0.5.1`
 - `v0.5.0`
 - `v0.4.0`

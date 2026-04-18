@@ -104,7 +104,43 @@
     "output_dir": "docs/images/generated_ai",
     "auto_generate_on_prepare_figures": false
   },
+  "reference_extraction": {
+    "enabled": false,
+    "provider": "zetatechs-gemini",
+    "base_url": "https://api.zetatechs.com",
+    "api_key_env": "NEWAPI_API_KEY",
+    "default_model": "gemini-3.1-flash-image-preview",
+    "timeout_sec": 180,
+    "output_dir": "docs/images/reference_guides"
+  },
   "ai_figure_specs": {},
+  "reference_guide_specs": {
+    "traditional-architecture-example": {
+      "enabled": false,
+      "guide_type": "architecture",
+      "description": "示例：先从冻结样图和说明文档提炼传统分层架构图规范。",
+      "sources": [
+        {
+          "kind": "markdown",
+          "path": "docs/images/reference_guides_src/architecture/README.md",
+          "role": "text_spec"
+        },
+        {
+          "kind": "image",
+          "path": "docs/images/reference_guides_src/architecture/example.png",
+          "role": "layout_style",
+          "note": "示例：先把已验收样图冻结到 workspace 内，不要直接引用 docs/images/generated_ai/ 或 tmp_* 运行期产物。"
+        }
+      ],
+      "extract_focus": [
+        "分层结构",
+        "模块框排布",
+        "连线约束",
+        "禁止项"
+      ]
+    }
+  },
+  "plantuml_figure_specs": {},
   "er_figure_specs": {},
   "figure_map": {},
   "metadata": {
